@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mayfair-postgres
+    environment:
+      POSTGRES_DB: mayfair_hotel_db
+      POSTGRES_USER: mayfair_user
+      POSTGRES_PASSWORD: mayfair_password123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schemas:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mayfair-redis
+    command: redis-server --appendonly yes --requirepass mayfair_redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mayfair-backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mayfair_hotel_db
+      DB_USER: mayfair_user
+      DB_PASSWORD: mayfair_password123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: mayfair_redis_password
+      JWT_SECRET: your_jwt_secret_key_here
+      JWT_EXPIRES_IN: 7d
+      BCRYPT_SALT_ROUNDS: 12
+      CORS_ORIGIN: http://localhost:3001
+      RATE_LIMIT_WINDOW: 15
+      RATE_LIMIT_MAX_REQUESTS: 100
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Frontend Web Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mayfair-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api
+      REACT_APP_SOCKET_URL: http://localhost:3000
+      REACT_APP_ENV: development
+      REACT_APP_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+      REACT_APP_RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+    command: npm start
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: mayfair-nginx
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d
+      - ./uploads:/var/www/uploads
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+
+  # PgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: mayfair-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mayfairhotel.com
+      PGADMIN_DEFAULT_PASSWORD: mayfair_admin_123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: mayfair-redis-commander
+    hostname: redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:mayfair_redis_password
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - mayfair-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  mayfair-network:
+    driver: bridge
