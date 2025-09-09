@@ -1,25 +1,70 @@
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const Restaurant = require('../models/Restaurant');
 
 /**
  * Restaurant Table Management Controller
  */
 
 /**
- * Get all restaurant tables
- * GET /api/v1/restaurant/tables
+ * Get restaurants
+ * GET /api/v1/restaurants
+ */
+const getRestaurants = async (req, res) => {
+  try {
+    const { type } = req.query;
+    
+    let query = Restaurant.query()
+      .where('is_active', true)
+      .orderBy('name');
+    
+    if (type) {
+      query = query.where('restaurant_type', type);
+    }
+    
+    const restaurants = await query;
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        restaurants,
+        totalRestaurants: restaurants.length
+      }
+    });
+  } catch (error) {
+    console.error('Get restaurants error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to fetch restaurants'
+      }
+    });
+  }
+};
+
+/**
+ * Get restaurant tables by restaurant
+ * GET /api/v1/restaurants/:restaurantId/tables
  */
 const getTables = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { location } = req.query;
     
     let query = db('restaurant_tables')
-      .select('*')
-      .where('is_active', true)
-      .orderBy(['location', 'table_number']);
+      .select('restaurant_tables.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+      .where('restaurant_tables.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
+    
+    if (restaurantId && restaurantId !== 'all') {
+      query = query.where('restaurant_tables.restaurant_id', restaurantId);
+    }
     
     if (location) {
-      query = query.where('location', location);
+      query = query.where('restaurant_tables.location', location);
     }
     
     const tables = await query;
@@ -29,7 +74,8 @@ const getTables = async (req, res) => {
       data: {
         tables,
         totalTables: tables.length,
-        locations: [...new Set(tables.map(t => t.location))]
+        locations: [...new Set(tables.map(t => t.location))],
+        restaurants: [...new Set(tables.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
       }
     });
   } catch (error) {
@@ -46,10 +92,11 @@ const getTables = async (req, res) => {
 
 /**
  * Create new restaurant table (Admin/Manager)
- * POST /api/v1/restaurant/tables
+ * POST /api/v1/restaurants/:restaurantId/tables
  */
 const createTable = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { table_number, capacity, location } = req.body;
     
     // Validation
@@ -59,6 +106,18 @@ const createTable = async (req, res) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Table number, capacity, and location are required'
+        }
+      });
+    }
+    
+    // Verify restaurant exists
+    const restaurant = await Restaurant.query().findById(restaurantId);
+    if (!restaurant || !restaurant.is_active) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_NOT_FOUND',
+          message: 'Restaurant not found or not active'
         }
       });
     }
@@ -73,9 +132,10 @@ const createTable = async (req, res) => {
       });
     }
     
-    // Check if table number exists
+    // Check if table number exists within this restaurant
     const existingTable = await db('restaurant_tables')
       .where('table_number', table_number)
+      .where('restaurant_id', restaurantId)
       .where('is_active', true)
       .first();
     
@@ -96,6 +156,7 @@ const createTable = async (req, res) => {
         table_number,
         capacity: parseInt(capacity),
         location,
+        restaurant_id: restaurantId,
         is_active: true,
         created_at: new Date(),
         updated_at: new Date()
@@ -256,20 +317,27 @@ const deleteTable = async (req, res) => {
  */
 
 /**
- * Get menu categories
- * GET /api/v1/restaurant/menu/categories
+ * Get menu categories by restaurant
+ * GET /api/v1/restaurants/:restaurantId/menu/categories
  */
 const getMenuCategories = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { type } = req.query; // 'restaurant' or 'bar'
     
     let query = db('menu_categories')
-      .select('*')
-      .where('is_active', true)
-      .orderBy('display_order', 'asc');
+      .select('menu_categories.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .where('menu_categories.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy('menu_categories.display_order', 'asc');
+    
+    if (restaurantId && restaurantId !== 'all') {
+      query = query.where('menu_categories.restaurant_id', restaurantId);
+    }
     
     if (type && ['restaurant', 'bar'].includes(type)) {
-      query = query.where('type', type);
+      query = query.where('menu_categories.type', type);
     }
     
     const categories = await query;
@@ -292,10 +360,11 @@ const getMenuCategories = async (req, res) => {
 
 /**
  * Create menu category (Admin/Manager)
- * POST /api/v1/restaurant/menu/categories
+ * POST /api/v1/restaurants/:restaurantId/menu/categories
  */
 const createMenuCategory = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { name, description, type, display_order } = req.body;
     
     if (!name || !type) {
@@ -304,6 +373,18 @@ const createMenuCategory = async (req, res) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Name and type are required'
+        }
+      });
+    }
+    
+    // Verify restaurant exists
+    const restaurant = await Restaurant.query().findById(restaurantId);
+    if (!restaurant || !restaurant.is_active) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_NOT_FOUND',
+          message: 'Restaurant not found or not active'
         }
       });
     }
@@ -325,6 +406,7 @@ const createMenuCategory = async (req, res) => {
         name,
         description,
         type,
+        restaurant_id: restaurantId,
         display_order: display_order || 0,
         is_active: true,
         created_at: new Date(),
@@ -350,24 +432,31 @@ const createMenuCategory = async (req, res) => {
 };
 
 /**
- * Get menu items with categories
- * GET /api/v1/restaurant/menu
+ * Get menu items with categories by restaurant
+ * GET /api/v1/restaurants/:restaurantId/menu
  */
 const getMenu = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { type, category_id } = req.query;
     
     let categoryQuery = db('menu_categories')
-      .select('*')
-      .where('is_active', true)
-      .orderBy('display_order', 'asc');
+      .select('menu_categories.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .where('menu_categories.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy('menu_categories.display_order', 'asc');
+    
+    if (restaurantId && restaurantId !== 'all') {
+      categoryQuery = categoryQuery.where('menu_categories.restaurant_id', restaurantId);
+    }
     
     if (type && ['restaurant', 'bar'].includes(type)) {
-      categoryQuery = categoryQuery.where('type', type);
+      categoryQuery = categoryQuery.where('menu_categories.type', type);
     }
     
     if (category_id) {
-      categoryQuery = categoryQuery.where('id', category_id);
+      categoryQuery = categoryQuery.where('menu_categories.id', category_id);
     }
     
     const categories = await categoryQuery;
@@ -607,6 +696,9 @@ const deleteMenuItem = async (req, res) => {
 };
 
 module.exports = {
+  // Restaurant Management
+  getRestaurants,
+  
   // Table Management
   getTables,
   createTable,
