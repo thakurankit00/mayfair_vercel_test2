@@ -47,7 +47,7 @@ const Header = ({ toggleSidebar }) => {
             
             {/* Logo */}
             <div className="flex items-center ml-2 md:ml-0">
-              <h1 className="text-xl font-bold text-blue-600">Mayfair Hotel</h1>
+              <h1 className="text-xl font-bold font-hightower text-light-orange">MayFair Hotel</h1>
               <span className="ml-2 text-sm text-gray-500 hidden sm:inline">Management System</span>
             </div>
           </div>
@@ -71,7 +71,7 @@ const Header = ({ toggleSidebar }) => {
               >
                 <div className="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-gray-100">
                   {/* Avatar */}
-                  <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
+                  <div className="h-8 w-8 rounded-full bg-light-orange flex items-center justify-center">
                     <span className="text-white font-medium text-sm">
                       {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
                     </span>

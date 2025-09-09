@@ -3,6 +3,7 @@ import EditCategoryModal from './EditCategoryModal';
 import ReservationModal from './ReservationModal';
 import { useAuth } from '../../contexts/AuthContext';
 
+
 import { 
   restaurantTableApi, 
   restaurantMenuApi, 
@@ -10,6 +11,7 @@ import {
   restaurantOrderApi 
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
+
 
 const RestaurantPage = () => {
   const { user } = useAuth();
@@ -66,6 +68,10 @@ const RestaurantPage = () => {
     loadData();
   }, [activeTab, user.role]);
 
+  const handleTableAdded = (newTable) => {
+    setTables((prevTables) => [...prevTables, newTable]);
+  };
+
   const tabs = [
     { id: 'menu', name: 'Menu', icon: '📋', roles: ['customer', 'receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin'] },
     { id: 'reservations', name: 'Reservations', icon: '📅', roles: ['customer', 'receptionist', 'waiter', 'manager', 'admin'] },
@@ -79,7 +85,7 @@ const RestaurantPage = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Restaurant Management</h1>
+            <h1 className="text-3xl  font-hightower font-bold text-gray-900">Restaurant Management</h1>
             <p className="mt-2 text-gray-600">
               Manage restaurant operations, bookings, and orders
             </p>
@@ -103,7 +109,7 @@ const RestaurantPage = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex items-center space-x-2 ${
                 activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-light-orange text-light-orange'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -299,7 +305,9 @@ const MenuTab = ({ menu, userRole, onEditCategory  }) => {
           <div key={category.id} className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {category.name}
+                </h3>
                 <p className="text-sm text-gray-600">{category.description}</p>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                   {category.type}
@@ -317,38 +325,60 @@ const MenuTab = ({ menu, userRole, onEditCategory  }) => {
                 </button>
               )}
             </div>
-            
+
             {/* Menu Items */}
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {category.items?.map((item) => (
-                <div key={item.id} className="border border-gray-200 rounded-lg p-4">
+                <div
+                  key={item.id}
+                  className="border border-gray-200 rounded-lg p-4"
+                >
                   <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-medium text-gray-900">{item.name}</h4>
-                      <p className="text-sm text-gray-600 mt-1">{item.description}</p>
-                      <div className="mt-2 flex items-center space-x-2">
-                        <span className="text-lg font-semibold text-green-600">₹{item.price}</span>
-                        {item.is_vegetarian && <span className="text-green-500">🌱</span>}
+                    {item.image_url && (
+                    <img
+                      src={item.image_url}
+                     alt={item.name}
+                      className="w-40 h-40 object-cover rounded-md mr-4"
+                     />
+                      )}
+                      <div className="flex justify-between items-start">
+                    <div className='flex-1'>
+                      <h4 className="font-semibold text-lg text-gray-900">{item.name}</h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {item.description}
+                      </p>
+                      <div className="mt-3 flex items-center space-x-2">
+                         <span
+    className={`text-lg font-semibold ${
+      item.is_vegetarian || item.is_vegan
+        ? "text-green-600"
+        : "text-red-600"
+    }`}
+  >
+    ₹{item.price}
+  </span>
+                        {item.is_vegetarian && (
+                          <span className="text-green-500">🌱</span>
+                        )}
                         {item.is_vegan && <span className="text-green-600">🌿</span>}
+                        {!item.is_vegan && !item.is_vegetarian && <span className="text-lg font-semibold text-red-600"> 🍗</span>}
                       </div>
                       {item.preparation_time && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-500 mt-2">
                           Prep time: {item.preparation_time} mins
                         </p>
                       )}
                     </div>
-                    {['admin', 'manager'].includes(userRole) && (
-                      <button className="text-gray-400 hover:text-gray-600">
-                        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                        </svg>
-                      </button>
+                    </div>
+                    {["admin", "manager"].includes(userRole) && (
+                      <MenuItemActions item={item} />
                     )}
                   </div>
                 </div>
               ))}
             </div>
-            
+
             {(!category.items || category.items.length === 0) && (
               <div className="text-center py-8 text-gray-500">
                 No items in this category
@@ -364,9 +394,164 @@ const MenuTab = ({ menu, userRole, onEditCategory  }) => {
           <p className="text-gray-600 mt-2">No menu items found</p>
         </div>
       )}
+
+      {/* Modal for Add Menu Item */}
+      {showAddForm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+           
+            <div className="flex items-center justify-between mb-4">
+                 <h2 className="text-xl font-semibold mb-4 bg-light-orange text-white p-2 rounded">
+        {editingItem ? "Edit Menu Item" : "Add Menu Item"}
+        </h2>
+     
+       <button
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          </div>
+            <form onSubmit={handleAddItem} className="space-y-4">
+             <div>
+    <label className="block text-sm font-medium">Category</label>
+    <select
+      name="category_id"
+      value={newItem.category_id}
+      onChange={handleInputChange}
+      className="w-full border rounded-md px-3 py-2"
+      required
+    >
+      <option value="">Select Category</option>
+      {menu.menu?.map((cat) => (
+        <option key={cat.id} value={cat.id}>
+          {cat.name}
+        </option>
+      ))}
+    </select>
+  </div>
+              <div>
+                <label className="block text-sm font-medium">Name</label>
+                <input
+                name='name'
+                  type="text"
+                  value={newItem.name}
+                  onChange={handleInputChange}
+                  className="w-full border rounded-md px-3 py-2"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Description</label>
+                <textarea
+                name='description'
+                  value={newItem.description}
+                  onChange={handleInputChange }
+                  className="w-full border rounded-md px-3 py-2"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Price (₹)</label>
+                <input
+                name='price'
+                  type="number"
+                  value={newItem.price}
+                  onChange={handleInputChange }
+                  className="w-full border rounded-md px-3 py-2"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">
+                  Preparation Time (mins)
+                </label>
+                <input
+                 name='preparation_time'
+                  type="number"
+                  value={newItem.preparation_time}
+                  onChange={handleInputChange}
+                  className="w-full border rounded-md px-3 py-2"
+                />
+              </div>
+              <div className="flex space-x-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                     name="is_vegetarian"
+                    checked={newItem.is_vegetarian}
+                    onChange={handleInputChange }
+                  />
+                  <span>Vegetarian</span>
+                </label>
+                <label className="flex items-center space-x-2">
+                  <input
+                   name="is_vegan"
+                    type="checkbox"
+                    checked={newItem.is_vegan}
+                    onChange={handleInputChange}
+                  />
+                  <span>Vegan</span>
+                </label>
+              </div>
+              <div>
+  <label className="block text-sm font-medium">Upload Image</label>
+  <input
+    type="file"
+    accept="image/*"
+    onChange={(e) => {
+      const file = e.target.files[0];
+      if (file) {
+        setNewItem((prev) => ({
+          ...prev,
+          image_url: URL.createObjectURL(file), // preview only
+        }));
+      }
+    }}
+    className="w-full border rounded-md px-3 py-2"
+  />
+
+  {/* Preview Image */}
+  {newItem.image_url && (
+    <img
+      src={newItem.image_url}
+      alt="Preview"
+      className="w-32 h-32 object-cover rounded mt-2 border"
+    />
+  )}
+</div>
+
+              
+              <div className="flex justify-end space-x-3 mt-4">
+                <button
+              
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                
+                <button
+                  type="submit"
+                 
+                  className="px-4 py-2 text-sm font-medium text-white bg-light-orange rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {editingItem ? "Update Item" : "Save Item"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+
+
 
 // Reservations Tab Component
 const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelReservation }) => {
