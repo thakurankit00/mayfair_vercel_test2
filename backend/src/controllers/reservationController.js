@@ -61,7 +61,7 @@ const getTableAvailability = async (req, res) => {
     const existingReservations = await db('table_reservations')
       .select('table_id')
       .where('reservation_date', date)
-      .where('status', 'confirmed')
+      .where('status', 'confirmed','pending','cancelled')
       .where(function() {
         this.whereBetween('reservation_time', [
           time,
@@ -92,7 +92,7 @@ const getTableAvailability = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Get table availability error:', error);
+    console.error('Get table availability error: - reservationController.js:95', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -110,10 +110,15 @@ const getTableAvailability = async (req, res) => {
 const createReservation = async (req, res) => {
   try {
     const {
+      first_name,
+      last_name,
+      email,
+      phone,
       table_id,
       reservation_date,
       reservation_time,
       party_size,
+      status,
       special_requests
     } = req.body;
     
@@ -210,7 +215,7 @@ const createReservation = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Create reservation error:', error);
+    console.error('Create reservation error: - reservationController.js:218', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -277,7 +282,7 @@ const getReservations = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Get reservations error:', error);
+    console.error('Get reservations error: - reservationController.js:285', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -354,7 +359,7 @@ const updateReservation = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Update reservation error:', error);
+    console.error('Update reservation error: - reservationController.js:362', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -414,7 +419,7 @@ const cancelReservation = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Cancel reservation error:', error);
+    console.error('Cancel reservation error: - reservationController.js:422', error);
     return res.status(500).json({
       success: false,
       error: {

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import EditCategoryModal from './EditCategoryModal';
+import ReservationModal from './ReservationModal';
 import { useAuth } from '../../contexts/AuthContext';
+
 import { 
   restaurantTableApi, 
   restaurantMenuApi, 
@@ -24,6 +27,10 @@ const RestaurantPage = () => {
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
+  const [editingReservation, setEditingReservation] = useState(null);
+ //  Hooks must be inside the component
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
 
   // Load data based on user role and active tab
   useEffect(() => {
@@ -137,15 +144,67 @@ const RestaurantPage = () => {
       {!loading && (
         <div className="min-h-96">
           {/* Menu Tab */}
-          {activeTab === 'menu' && <MenuTab menu={menu} userRole={user.role} />}
+          {activeTab === 'menu' && (
+
+            <MenuTab 
+
+              menu={menu} 
+
+              userRole={user.role} 
+
+              onEditCategory={(category) => {
+
+                setSelectedCategory(category);
+
+                setShowEditCategoryModal(true);
+
+              }}
+
+            />
+
+          )}
 
           {/* Reservations Tab */}
           {activeTab === 'reservations' && (
-            <ReservationsTab 
-              reservations={reservations} 
-              userRole={user.role}
-              onCreateReservation={() => setShowReservationModal(true)}
-            />
+            <>
+              <ReservationsTab 
+                reservations={reservations} 
+                userRole={user.role}
+                onCreateReservation={() => {
+                  setEditingReservation(null);
+                  setShowReservationModal(true);
+                }}
+                onEditReservation={(reservation) => {
+                  setEditingReservation(reservation);
+                  setShowReservationModal(true);
+                }}
+                onCancelReservation={async (id) => {
+                  try {
+                    await restaurantReservationApi.cancelReservation(id);
+                    const reservationData = await restaurantReservationApi.getReservations();
+                    setReservations(reservationData.reservations || []);
+                  } catch (err) {
+                    setError(err.message || 'Failed to cancel reservation');
+                  }
+                }}
+              />
+              {showReservationModal && (
+                <ReservationModal
+                  reservation={editingReservation}
+                  onClose={() => setShowReservationModal(false)}
+                  onSave={async () => {
+                    try {
+                      const reservationData = await restaurantReservationApi.getReservations();
+                      setReservations(reservationData.reservations || []);
+                      setShowReservationModal(false);
+                      setEditingReservation(null);
+                    } catch (err) {
+                      setError(err.message || 'Failed to refresh reservations');
+                    }
+                  }}
+                />
+              )}
+            </>
           )}
 
           {/* Orders Tab */}
@@ -161,12 +220,45 @@ const RestaurantPage = () => {
           )}
         </div>
       )}
+       {/* 🔹 Edit Category Modal */}
+
+      {showEditCategoryModal && selectedCategory && (
+        <EditCategoryModal
+          category={selectedCategory}
+          onClose={() => setShowEditCategoryModal(false)}
+          onSave={async (updatedData) => {
+            try {
+              await restaurantMenuApi.updateCategory(selectedCategory.id, updatedData);
+              const updatedMenu = await restaurantMenuApi.getMenu();
+              setMenu(updatedMenu);
+              setShowEditCategoryModal(false);
+            } catch (err) {
+              setError(err.message || "Failed to update category");
+            }
+          }}
+        />
+      )}
+       
+       {/*  Reservation Modal */}
+          {showReservationModal && (
+        <ReservationModal
+        onClose={() => setShowReservationModal(false)}
+       onSave={async () => {
+       try {
+        const reservationData = await restaurantReservationApi.getReservations();
+         setReservations(reservationData.reservations || []);
+      } catch (err) {
+        setError(err.message || 'Failed to reload reservations');
+      }
+    }}
+  />
+)}
     </div>
   );
 };
 
 // Menu Tab Component
-const MenuTab = ({ menu, userRole }) => {
+const MenuTab = ({ menu, userRole, onEditCategory  }) => {
   const [selectedType, setSelectedType] = useState('all');
   
   const filteredMenu = menu.menu?.filter(category => 
@@ -177,17 +269,23 @@ const MenuTab = ({ menu, userRole }) => {
     <div className="space-y-6">
       {/* Menu Controls */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
           <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2"
-          >
-            <option value="all">All Items</option>
-            <option value="restaurant">Restaurant</option>
-            <option value="bar">Bar</option>
-          </select>
-        </div>
+
+          value={selectedType}
+
+          onChange={(e) => setSelectedType(e.target.value)}
+
+          className="border border-gray-300 rounded-md px-3 py-2"
+
+        >
+
+          <option value="all">All Items</option>
+
+          <option value="restaurant">Restaurant</option>
+
+          <option value="bar">Bar</option>
+
+        </select>
         {['admin', 'manager'].includes(userRole) && (
           <button className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
             Add Menu Item
@@ -208,7 +306,13 @@ const MenuTab = ({ menu, userRole }) => {
                 </span>
               </div>
               {['admin', 'manager'].includes(userRole) && (
-                <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <button 
+
+                  onClick={() => onEditCategory(category)}
+
+                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+
+                >
                   Edit Category
                 </button>
               )}
@@ -265,7 +369,23 @@ const MenuTab = ({ menu, userRole }) => {
 };
 
 // Reservations Tab Component
-const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
+const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelReservation }) => {
+  const [deletingId, setDeletingId] = React.useState(null);
+  const [deleteError, setDeleteError] = React.useState(null);
+
+  const handleDelete = async (id) => {
+    setDeleteError(null);
+    setDeletingId(id);
+    if (window.confirm('Are you sure you want to delete this reservation?')) {
+      try {
+        await onCancelReservation(id);
+      } catch (err) {
+        setDeleteError(err.message || 'Failed to delete reservation');
+      }
+    }
+    setDeletingId(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -277,6 +397,12 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
           New Reservation
         </button>
       </div>
+
+      {deleteError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3 text-red-700">
+          {deleteError}
+        </div>
+      )}
 
       {/* Reservations List */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -336,11 +462,20 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
                       {reservation.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-700 mr-2">Edit</button>
-                    {reservation.status === 'confirmed' && (
-                      <button className="text-red-600 hover:text-red-700">Cancel</button>
-                    )}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
+                    <button
+                      className="text-blue-600 hover:text-blue-700 mr-2"
+                      onClick={() => onEditReservation(reservation)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="text-red-600 hover:text-white bg-red-100 hover:bg-red-600 border border-red-200 rounded px-2 py-1 transition-colors duration-150"
+                      onClick={() => handleDelete(reservation.id)}
+                      disabled={deletingId === reservation.id}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -348,18 +483,10 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
           </table>
         </div>
       </div>
-
-      {reservations.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 text-lg">📅</div>
-          <p className="text-gray-600 mt-2">No reservations found</p>
-        </div>
-      )}
     </div>
   );
-};
+}
 
-// Orders Tab Component
 const OrdersTab = ({ orders, userRole }) => {
   return (
     <div className="space-y-6">
@@ -515,8 +642,9 @@ const TablesTab = ({ tables, userRole, onAddTable }) => {
           )}
         </div>
       )}
+
     </div>
   );
-};
+}
 
 export default RestaurantPage;

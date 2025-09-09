@@ -28,7 +28,7 @@ api.interceptors.response.use(
     return response; // Return the full response for restaurant API
   },
   (error) => {
-    console.error('Restaurant API Error:', error.response?.data || error.message);
+    console.error('Restaurant API Error: - restaurantApi.js:31', error.response?.data || error.message);
     
     // Handle 401 errors by clearing auth data
     if (error.response?.status === 401) {
@@ -114,6 +114,16 @@ export const restaurantMenuApi = {
   // Delete menu item
   deleteItem: async (id) => {
     const response = await api.delete(`/restaurant/menu/items/${id}`);
+    return response.data;
+  },
+  updateCategory: async (id, categoryData) => {
+  const response = await api.put(`/restaurant/menu/categories/${id}`, categoryData);
+  return response.data.data;
+},
+
+  // Delete menu category
+  deleteCategory: async (id) => {
+    const response = await api.delete(`/restaurant/menu/categories/${id}`);
     return response.data;
   }
 };

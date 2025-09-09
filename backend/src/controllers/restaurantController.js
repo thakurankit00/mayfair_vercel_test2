@@ -1,3 +1,76 @@
+/**
+ * Update menu category (Admin/Manager)
+ * PUT /api/v1/restaurant/menu/categories/:id
+ */
+const updateMenuCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, type, display_order } = req.body;
+
+    // Validate input
+    if (!name || !type) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Name and type are required'
+        }
+      });
+    }
+    if (!['restaurant', 'bar', 'rooftop'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Type must be restaurant, bar, or rooftop'
+        }
+      });
+    }
+
+    // Check if category exists
+    const existingCategory = await db('menu_categories')
+      .where('id', id)
+      .where('is_active', true)
+      .first();
+    if (!existingCategory) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CATEGORY_NOT_FOUND',
+          message: 'Menu category not found'
+        }
+      });
+    }
+
+    // Update category
+    const updateData = {
+      name,
+      description,
+      type,
+      display_order: display_order || existingCategory.display_order,
+      updated_at: new Date()
+    };
+    const updatedCategory = await db('menu_categories')
+      .where('id', id)
+      .update(updateData)
+      .returning('*');
+
+    return res.status(200).json({
+      success: true,
+      data: { category: updatedCategory[0] },
+      message: 'Menu category updated successfully'
+    });
+  } catch (error) {
+    console.error('Update menu category error: - restaurantController.js:64', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to update menu category'
+      }
+    });
+  }
+};
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 
@@ -33,7 +106,7 @@ const getTables = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get tables error:', error);
+    console.error('Get tables error: - restaurantController.js:109', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -108,7 +181,7 @@ const createTable = async (req, res) => {
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
-    console.error('Create table error:', error);
+    console.error('Create table error: - restaurantController.js:184', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -178,7 +251,7 @@ const updateTable = async (req, res) => {
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
-    console.error('Update table error:', error);
+    console.error('Update table error: - restaurantController.js:254', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -240,7 +313,7 @@ const deleteTable = async (req, res) => {
       message: 'Restaurant table deleted successfully'
     });
   } catch (error) {
-    console.error('Delete table error:', error);
+    console.error('Delete table error: - restaurantController.js:316', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -279,7 +352,7 @@ const getMenuCategories = async (req, res) => {
       data: { categories }
     });
   } catch (error) {
-    console.error('Get menu categories error:', error);
+    console.error('Get menu categories error: - restaurantController.js:355', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -338,7 +411,7 @@ const createMenuCategory = async (req, res) => {
       message: 'Menu category created successfully'
     });
   } catch (error) {
-    console.error('Create menu category error:', error);
+    console.error('Create menu category error: - restaurantController.js:414', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -397,7 +470,7 @@ const getMenu = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get menu error:', error);
+    console.error('Get menu error: - restaurantController.js:473', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -485,7 +558,7 @@ const createMenuItem = async (req, res) => {
       message: 'Menu item created successfully'
     });
   } catch (error) {
-    console.error('Create menu item error:', error);
+    console.error('Create menu item error: - restaurantController.js:561', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -548,7 +621,7 @@ const updateMenuItem = async (req, res) => {
       message: 'Menu item updated successfully'
     });
   } catch (error) {
-    console.error('Update menu item error:', error);
+    console.error('Update menu item error: - restaurantController.js:624', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -595,7 +668,7 @@ const deleteMenuItem = async (req, res) => {
       message: 'Menu item deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu item error:', error);
+    console.error('Delete menu item error: - restaurantController.js:671', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -616,6 +689,7 @@ module.exports = {
   // Menu Management
   getMenuCategories,
   createMenuCategory,
+  updateMenuCategory,
   getMenu,
   createMenuItem,
   updateMenuItem,

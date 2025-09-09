@@ -60,6 +60,10 @@ router.get('/menu/categories', getMenuCategories);
 // Create menu category (Admin/Manager)
 router.post('/menu/categories', authenticateToken, requireRole(['admin', 'manager']), createMenuCategory);
 
+// Update menu category (Admin/Manager)
+const { updateMenuCategory } = require('../controllers/restaurantController');
+router.put('/menu/categories/:id', authenticateToken, requireRole(['admin', 'manager']), updateMenuCategory);
+
 // Get menu with items (Public)
 router.get('/menu', getMenu);
 
