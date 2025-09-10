@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const uploadRoutes = require('./routes/upload');
+
 
 // Import database connection
 const db = require('./config/database');
@@ -90,6 +92,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/restaurant', restaurantRoutes);
+app.use("/api/v1/upload", uploadRoutes);
 
 // 404 handler
 app.use(notFound);

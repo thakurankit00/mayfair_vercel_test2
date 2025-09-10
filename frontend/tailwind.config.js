@@ -34,7 +34,7 @@ module.exports = {
         'light-orange': '#FF9933',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        
         hightower: ['High Tower Text', 'serif'],
       },
       animation: {

@@ -7,8 +7,9 @@ import {
   restaurantReservationApi, 
   restaurantOrderApi 
 } from '../../services/restaurantApi';
+import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-
+import AddTableModal from './AddTableForm';
 
 const RestaurantPage = () => {
   const { user } = useAuth();
@@ -191,6 +192,8 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
     is_vegan: false,
     image_url:"",
   });
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imagePreview, setImagePreview] = useState("");
 
   const filteredMenu =
     menu.menu?.filter(
@@ -222,7 +225,9 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
         category_id: "",
         is_vegetarian: false,
         is_vegan: false,
+        image_url: "",
       });
+      setImagePreview("");
       setEditingItem(null);
       setShowAddForm(false);
       await refreshMenu(); // Refresh menu after adding/updating
@@ -241,7 +246,9 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
       category_id: item.category_id,
       is_vegetarian: item.is_vegetarian,
       is_vegan: item.is_vegan,
+      image_url: item.image_url || "",
     });
+    setImagePreview(item.image_url || "");
     setShowAddForm(true);
   };
 
@@ -276,6 +283,7 @@ const handleClose = () => {
     is_vegan: false,
     image_url: "",
   });
+  setImagePreview("");
 };
 
   const MenuItemActions = ({ item }) => {
@@ -452,7 +460,7 @@ const handleClose = () => {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
            
             <div className="flex items-center justify-between mb-4">
-                 <h2 className="text-xl font-semibold mb-4 bg-light-orange text-white p-2 rounded">
+                 <h2 className="text-xl font-semibold mb-4  text-light-orange outline-4 p-2 rounded">
         {editingItem ? "Edit Menu Item" : "Add Menu Item"}
         </h2>
      
@@ -552,25 +560,47 @@ const handleClose = () => {
   <input
     type="file"
     accept="image/*"
-    onChange={(e) => {
-      const file = e.target.files[0];
-      if (file) {
-        setNewItem((prev) => ({
-          ...prev,
-          image_url: URL.createObjectURL(file), // preview only
-        }));
+    onChange={async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      // Local preview
+      const localUrl = URL.createObjectURL(file);
+      setImagePreview(localUrl);
+
+      // Read as base64 and upload
+      setImageUploading(true);
+      try {
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+        const base64 = await toBase64(file);
+        const res = await uploadApi.uploadImage(base64);
+        if (res?.success && res?.url) {
+          setNewItem((prev) => ({ ...prev, image_url: res.url }));
+        }
+      } catch (err) {
+        console.error('Image upload failed:', err);
+      } finally {
+        setImageUploading(false);
       }
     }}
     className="w-full border rounded-md px-3 py-2"
   />
 
   {/* Preview Image */}
-  {newItem.image_url && (
+  {(imagePreview || newItem.image_url) && (
     <img
-      src={newItem.image_url}
+      src={imagePreview || newItem.image_url}
       alt="Preview"
       className="w-32 h-32 object-cover rounded mt-2 border"
     />
+  )}
+  {imageUploading && (
+    <p className="text-xs text-gray-500 mt-1">Uploading image...</p>
   )}
 </div>
 
@@ -794,20 +824,24 @@ const OrdersTab = ({ orders, userRole }) => {
 
 // Tables Tab Component
 const TablesTab = ({ tables, userRole, onAddTable }) => {
+  const [showAddTable, setShowAddTable] = useState(false);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">Restaurant Tables</h3>
         {['admin', 'manager'].includes(userRole) && (
           <button
-            onClick={onAddTable}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            onClick={() => setShowAddTable(true)}
+            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
           >
             Add Table
           </button>
         )}
       </div>
 
+        {/* {showAddTable && (
+    <AddTableModal onClose={() => setShowAddTable(false)} />
+     */}
       {/* Tables Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tables.map((table) => (
