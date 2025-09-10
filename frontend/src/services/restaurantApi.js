@@ -28,7 +28,7 @@ api.interceptors.response.use(
     return response; // Return the full response for restaurant API
   },
   (error) => {
-    console.error('Restaurant API Error:', error.response?.data || error.message);
+    console.error('Restaurant API Error: - restaurantApi.js:31', error.response?.data || error.message);
     
     // Handle 401 errors by clearing auth data
     if (error.response?.status === 401) {
@@ -44,20 +44,106 @@ api.interceptors.response.use(
 );
 
 // ============================================================================
+// RESTAURANT MANAGEMENT API
+// ============================================================================
+
+export const restaurantApi = {
+  // Get all restaurants
+  getRestaurants: async (type = null) => {
+    const params = type ? { type } : {};
+    const response = await api.get('/restaurant/restaurants', { params });
+    return response.data.data;
+  },
+
+  // Get restaurant by ID
+  getRestaurantById: async (id) => {
+    const response = await api.get(`/restaurant/restaurants/${id}`);
+    return response.data.data;
+  }
+};
+
+// ============================================================================
+// KITCHEN MANAGEMENT API
+// ============================================================================
+
+export const kitchenApi = {
+  // Get all kitchens
+  getKitchens: async () => {
+    const response = await api.get('/restaurant/kitchens');
+    return response.data.data;
+  },
+
+  // Get kitchen dashboard
+  getKitchenDashboard: async (kitchenId) => {
+    const response = await api.get(`/restaurant/kitchens/${kitchenId}/dashboard`);
+    return response.data.data;
+  },
+
+  // Get kitchen orders
+  getKitchenOrders: async (kitchenId, status = null) => {
+    const params = status ? { status } : {};
+    const response = await api.get(`/restaurant/kitchen/${kitchenId}/orders`, { params });
+    return response.data.data;
+  },
+
+  // Accept kitchen order
+  acceptKitchenOrder: async (kitchenId, orderId, estimatedTime = null, notes = null) => {
+    const data = {};
+    if (estimatedTime) data.estimated_time = estimatedTime;
+    if (notes) data.notes = notes;
+    const response = await api.post(`/restaurant/kitchen/${kitchenId}/orders/${orderId}/accept`, data);
+    return response.data.data;
+  },
+
+  // Reject kitchen order
+  rejectKitchenOrder: async (kitchenId, orderId, reason) => {
+    const response = await api.post(`/restaurant/kitchen/${kitchenId}/orders/${orderId}/reject`, { reason });
+    return response.data.data;
+  },
+
+  // Transfer order to different kitchen
+  transferOrderToKitchen: async (orderId, targetKitchenId, reason) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/transfer`, {
+      target_kitchen_id: targetKitchenId,
+      reason
+    });
+    return response.data.data;
+  },
+
+  // Get kitchen staff
+  getKitchenStaff: async (kitchenId) => {
+    const response = await api.get(`/restaurant/kitchens/${kitchenId}/staff`);
+    return response.data.data;
+  },
+
+  // Get order kitchen logs
+  getOrderKitchenLogs: async (orderId) => {
+    const response = await api.get(`/restaurant/orders/${orderId}/kitchen-logs`);
+    return response.data.data;
+  }
+};
+
+// ============================================================================
 // TABLE MANAGEMENT API
 // ============================================================================
 
 export const restaurantTableApi = {
   // Get all tables
-  getTables: async (location = null) => {
-    const params = location ? { location } : {};
-    const response = await api.get('/restaurant/tables', { params });
+  getTables: async (restaurantId = null, location = null) => {
+    const params = {};
+    if (location) params.location = location;
+    
+    const endpoint = restaurantId && restaurantId !== 'all' 
+      ? `/restaurant/restaurants/${restaurantId}/tables`
+      : '/restaurant/tables';
+      
+    const response = await api.get(endpoint, { params });
     return response.data.data;
   },
 
   // Create new table
-  createTable: async (tableData) => {
-    const response = await api.post('/restaurant/tables', tableData);
+  createTable: async (restaurantId, tableData) => {
+    const response = await api.post(`/restaurant/restaurants/${restaurantId}/tables`, tableData);
     return response.data.data;
   },
 
@@ -88,22 +174,34 @@ export const uploadApi = {
 
 export const restaurantMenuApi = {
   // Get menu categories
-  getCategories: async (type = null) => {
-    const params = type ? { type } : {};
-    const response = await api.get('/restaurant/menu/categories', { params });
+  getCategories: async (restaurantId = null, type = null) => {
+    const params = {};
+    if (type) params.type = type;
+    
+    const endpoint = restaurantId && restaurantId !== 'all'
+      ? `/restaurant/restaurants/${restaurantId}/menu/categories`
+      : '/restaurant/menu/categories';
+      
+    const response = await api.get(endpoint, { params });
     return response.data.data.categories;
   },
 
   // Create menu category
-  createCategory: async (categoryData) => {
-    const response = await api.post('/restaurant/menu/categories', categoryData);
+  createCategory: async (restaurantId, categoryData) => {
+    const response = await api.post(`/restaurant/restaurants/${restaurantId}/menu/categories`, categoryData);
     return response.data.data;
   },
 
   // Get full menu
-  getMenu: async (type = null) => {
-    const params = type ? { type } : {};
-    const response = await api.get('/restaurant/menu', { params });
+  getMenu: async (restaurantId = null, type = null) => {
+    const params = {};
+    if (type) params.type = type;
+    
+    const endpoint = restaurantId && restaurantId !== 'all'
+      ? `/restaurant/restaurants/${restaurantId}/menu`
+      : '/restaurant/menu';
+      
+    const response = await api.get(endpoint, { params });
     return response.data.data;
   },
 
@@ -122,6 +220,16 @@ export const restaurantMenuApi = {
   // Delete menu item
   deleteItem: async (id) => {
     const response = await api.delete(`/restaurant/menu/items/${id}`);
+    return response.data;
+  },
+  updateCategory: async (id, categoryData) => {
+  const response = await api.put(`/restaurant/menu/categories/${id}`, categoryData);
+  return response.data.data;
+},
+
+  // Delete menu category
+  deleteCategory: async (id) => {
+    const response = await api.delete(`/restaurant/menu/categories/${id}`);
     return response.data;
   }
 };

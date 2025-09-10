@@ -1,25 +1,143 @@
+/**
+ * Update menu category (Admin/Manager)
+ * PUT /api/v1/restaurant/menu/categories/:id
+ */
+const updateMenuCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, type, display_order } = req.body;
+
+    // Validate input
+    if (!name || !type) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Name and type are required'
+        }
+      });
+    }
+    if (!['restaurant', 'bar', 'rooftop'].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Type must be restaurant, bar, or rooftop'
+        }
+      });
+    }
+
+    // Check if category exists
+    const existingCategory = await db('menu_categories')
+      .where('id', id)
+      .where('is_active', true)
+      .first();
+    if (!existingCategory) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CATEGORY_NOT_FOUND',
+          message: 'Menu category not found'
+        }
+      });
+    }
+
+    // Update category
+    const updateData = {
+      name,
+      description,
+      type,
+      display_order: display_order || existingCategory.display_order,
+      updated_at: new Date()
+    };
+    const updatedCategory = await db('menu_categories')
+      .where('id', id)
+      .update(updateData)
+      .returning('*');
+
+    return res.status(200).json({
+      success: true,
+      data: { category: updatedCategory[0] },
+      message: 'Menu category updated successfully'
+    });
+  } catch (error) {
+    console.error('Update menu category error: - restaurantController.js:64', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to update menu category'
+      }
+    });
+  }
+};
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const Restaurant = require('../models/Restaurant');
 
 /**
  * Restaurant Table Management Controller
  */
 
 /**
- * Get all restaurant tables
- * GET /api/v1/restaurant/tables
+ * Get restaurants
+ * GET /api/v1/restaurants
+ */
+const getRestaurants = async (req, res) => {
+  try {
+    const { type } = req.query;
+    
+    let query = Restaurant.query()
+      .where('is_active', true)
+      .orderBy('name');
+    
+    if (type) {
+      query = query.where('restaurant_type', type);
+    }
+    
+    const restaurants = await query;
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        restaurants,
+        totalRestaurants: restaurants.length
+      }
+    });
+  } catch (error) {
+    console.error('Get restaurants error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to fetch restaurants'
+      }
+    });
+  }
+};
+
+/**
+ * Get restaurant tables by restaurant
+ * GET /api/v1/restaurants/:restaurantId/tables
  */
 const getTables = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { location } = req.query;
     
     let query = db('restaurant_tables')
-      .select('*')
-      .where('is_active', true)
-      .orderBy(['location', 'table_number']);
+      .select('restaurant_tables.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+      .where('restaurant_tables.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
+    
+    if (restaurantId && restaurantId !== 'all') {
+      query = query.where('restaurant_tables.restaurant_id', restaurantId);
+    }
     
     if (location) {
-      query = query.where('location', location);
+      query = query.where('restaurant_tables.location', location);
     }
     
     const tables = await query;
@@ -29,11 +147,12 @@ const getTables = async (req, res) => {
       data: {
         tables,
         totalTables: tables.length,
-        locations: [...new Set(tables.map(t => t.location))]
+        locations: [...new Set(tables.map(t => t.location))],
+        restaurants: [...new Set(tables.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
       }
     });
   } catch (error) {
-    console.error('Get tables error:', error);
+    console.error('Get tables error: - restaurantController.js:109', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -46,10 +165,11 @@ const getTables = async (req, res) => {
 
 /**
  * Create new restaurant table (Admin/Manager)
- * POST /api/v1/restaurant/tables
+ * POST /api/v1/restaurants/:restaurantId/tables
  */
 const createTable = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { table_number, capacity, location } = req.body;
     
     // Validation
@@ -59,6 +179,18 @@ const createTable = async (req, res) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Table number, capacity, and location are required'
+        }
+      });
+    }
+    
+    // Verify restaurant exists
+    const restaurant = await Restaurant.query().findById(restaurantId);
+    if (!restaurant || !restaurant.is_active) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_NOT_FOUND',
+          message: 'Restaurant not found or not active'
         }
       });
     }
@@ -73,9 +205,10 @@ const createTable = async (req, res) => {
       });
     }
     
-    // Check if table number exists
+    // Check if table number exists within this restaurant
     const existingTable = await db('restaurant_tables')
       .where('table_number', table_number)
+      .where('restaurant_id', restaurantId)
       .where('is_active', true)
       .first();
     
@@ -96,6 +229,7 @@ const createTable = async (req, res) => {
         table_number,
         capacity: parseInt(capacity),
         location,
+        restaurant_id: restaurantId,
         is_active: true,
         created_at: new Date(),
         updated_at: new Date()
@@ -108,7 +242,7 @@ const createTable = async (req, res) => {
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
-    console.error('Create table error:', error);
+    console.error('Create table error: - restaurantController.js:184', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -178,7 +312,7 @@ const updateTable = async (req, res) => {
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
-    console.error('Update table error:', error);
+    console.error('Update table error: - restaurantController.js:254', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -240,7 +374,7 @@ const deleteTable = async (req, res) => {
       message: 'Restaurant table deleted successfully'
     });
   } catch (error) {
-    console.error('Delete table error:', error);
+    console.error('Delete table error: - restaurantController.js:316', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -256,20 +390,27 @@ const deleteTable = async (req, res) => {
  */
 
 /**
- * Get menu categories
- * GET /api/v1/restaurant/menu/categories
+ * Get menu categories by restaurant
+ * GET /api/v1/restaurants/:restaurantId/menu/categories
  */
 const getMenuCategories = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { type } = req.query; // 'restaurant' or 'bar'
     
     let query = db('menu_categories')
-      .select('*')
-      .where('is_active', true)
-      .orderBy('display_order', 'asc');
+      .select('menu_categories.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .where('menu_categories.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy('menu_categories.display_order', 'asc');
+    
+    if (restaurantId && restaurantId !== 'all') {
+      query = query.where('menu_categories.restaurant_id', restaurantId);
+    }
     
     if (type && ['restaurant', 'bar'].includes(type)) {
-      query = query.where('type', type);
+      query = query.where('menu_categories.type', type);
     }
     
     const categories = await query;
@@ -279,7 +420,7 @@ const getMenuCategories = async (req, res) => {
       data: { categories }
     });
   } catch (error) {
-    console.error('Get menu categories error:', error);
+    console.error('Get menu categories error: - restaurantController.js:355', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -292,10 +433,11 @@ const getMenuCategories = async (req, res) => {
 
 /**
  * Create menu category (Admin/Manager)
- * POST /api/v1/restaurant/menu/categories
+ * POST /api/v1/restaurants/:restaurantId/menu/categories
  */
 const createMenuCategory = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { name, description, type, display_order } = req.body;
     
     if (!name || !type) {
@@ -304,6 +446,18 @@ const createMenuCategory = async (req, res) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Name and type are required'
+        }
+      });
+    }
+    
+    // Verify restaurant exists
+    const restaurant = await Restaurant.query().findById(restaurantId);
+    if (!restaurant || !restaurant.is_active) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'RESTAURANT_NOT_FOUND',
+          message: 'Restaurant not found or not active'
         }
       });
     }
@@ -325,6 +479,7 @@ const createMenuCategory = async (req, res) => {
         name,
         description,
         type,
+        restaurant_id: restaurantId,
         display_order: display_order || 0,
         is_active: true,
         created_at: new Date(),
@@ -338,7 +493,7 @@ const createMenuCategory = async (req, res) => {
       message: 'Menu category created successfully'
     });
   } catch (error) {
-    console.error('Create menu category error:', error);
+    console.error('Create menu category error: - restaurantController.js:414', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -350,24 +505,31 @@ const createMenuCategory = async (req, res) => {
 };
 
 /**
- * Get menu items with categories
- * GET /api/v1/restaurant/menu
+ * Get menu items with categories by restaurant
+ * GET /api/v1/restaurants/:restaurantId/menu
  */
 const getMenu = async (req, res) => {
   try {
+    const { restaurantId } = req.params;
     const { type, category_id } = req.query;
     
     let categoryQuery = db('menu_categories')
-      .select('*')
-      .where('is_active', true)
-      .orderBy('display_order', 'asc');
+      .select('menu_categories.*', 'restaurants.name as restaurant_name')
+      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .where('menu_categories.is_active', true)
+      .where('restaurants.is_active', true)
+      .orderBy('menu_categories.display_order', 'asc');
+    
+    if (restaurantId && restaurantId !== 'all') {
+      categoryQuery = categoryQuery.where('menu_categories.restaurant_id', restaurantId);
+    }
     
     if (type && ['restaurant', 'bar'].includes(type)) {
-      categoryQuery = categoryQuery.where('type', type);
+      categoryQuery = categoryQuery.where('menu_categories.type', type);
     }
     
     if (category_id) {
-      categoryQuery = categoryQuery.where('id', category_id);
+      categoryQuery = categoryQuery.where('menu_categories.id', category_id);
     }
     
     const categories = await categoryQuery;
@@ -397,7 +559,7 @@ const getMenu = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get menu error:', error);
+    console.error('Get menu error: - restaurantController.js:473', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -485,7 +647,7 @@ const createMenuItem = async (req, res) => {
       message: 'Menu item created successfully'
     });
   } catch (error) {
-    console.error('Create menu item error:', error);
+    console.error('Create menu item error: - restaurantController.js:561', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -548,7 +710,7 @@ const updateMenuItem = async (req, res) => {
       message: 'Menu item updated successfully'
     });
   } catch (error) {
-    console.error('Update menu item error:', error);
+    console.error('Update menu item error: - restaurantController.js:624', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -595,7 +757,7 @@ const deleteMenuItem = async (req, res) => {
       message: 'Menu item deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu item error:', error);
+    console.error('Delete menu item error: - restaurantController.js:671', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -607,6 +769,9 @@ const deleteMenuItem = async (req, res) => {
 };
 
 module.exports = {
+  // Restaurant Management
+  getRestaurants,
+  
   // Table Management
   getTables,
   createTable,
@@ -616,6 +781,7 @@ module.exports = {
   // Menu Management
   getMenuCategories,
   createMenuCategory,
+  updateMenuCategory,
   getMenu,
   createMenuItem,
   updateMenuItem,

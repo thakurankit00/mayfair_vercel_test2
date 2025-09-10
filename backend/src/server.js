@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const dashboardRoutes = require('./routes/dashboard');
 const roomRoutes = require('./routes/rooms');
+const bookingRoutes = require('./routes/bookings');
 const restaurantRoutes = require('./routes/restaurant');
 
 // Import middleware
@@ -91,6 +92,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/rooms', roomRoutes);
+app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/restaurant', restaurantRoutes);
 app.use("/api/v1/upload", uploadRoutes);
 

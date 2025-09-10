@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import EditCategoryModal from './EditCategoryModal';
+import ReservationModal from './ReservationModal';
 import { useAuth } from '../../contexts/AuthContext';
 
-import { 
-  restaurantTableApi, 
+
+import {
+  restaurantApi,
+  restaurantTableApi,
   restaurantMenuApi, 
   restaurantReservationApi, 
   restaurantOrderApi 
@@ -10,14 +14,19 @@ import {
 import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 import AddTableModal from './AddTableForm';
+import RestaurantSelector from './RestaurantSelector';
+import KitchenDashboard from './KitchenDashboard';
+
 
 const RestaurantPage = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('menu');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
 
   // Data states
+  const [restaurants, setRestaurants] = useState([]);
   const [tables, setTables] = useState([]);
   const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
   const [reservations, setReservations] = useState([]);
@@ -27,8 +36,26 @@ const RestaurantPage = () => {
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
+  const [editingReservation, setEditingReservation] = useState(null);
+ //  Hooks must be inside the component
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
 
-  // Load data based on user role and active tab
+  // Load restaurants on component mount
+  useEffect(() => {
+    const loadRestaurants = async () => {
+      try {
+        const data = await restaurantApi.getRestaurants();
+        setRestaurants(data.restaurants || []);
+      } catch (err) {
+        setError(err.message || 'Failed to load restaurants');
+      }
+    };
+
+    loadRestaurants();
+  }, []);
+
+  // Load data based on user role, active tab, and selected restaurant
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -36,12 +63,12 @@ const RestaurantPage = () => {
         switch (activeTab) {
           case 'tables':
             if (['admin', 'manager', 'receptionist', 'waiter'].includes(user.role)) {
-              const tableData = await restaurantTableApi.getTables();
+              const tableData = await restaurantTableApi.getTables(selectedRestaurant);
               setTables(tableData.tables || []);
             }
             break;
           case 'menu':
-            const menuData = await restaurantMenuApi.getMenu();
+            const menuData = await restaurantMenuApi.getMenu(selectedRestaurant);
             setMenu(menuData);
             break;
           case 'reservations':
@@ -52,6 +79,9 @@ const RestaurantPage = () => {
             const orderData = await restaurantOrderApi.getOrders();
             setOrders(orderData.orders || []);
             break;
+          case 'kitchen':
+            // Kitchen data is loaded within KitchenDashboard component
+            break;
         }
       } catch (err) {
         setError(err.message || 'Failed to load data');
@@ -59,8 +89,10 @@ const RestaurantPage = () => {
       setLoading(false);
     };
 
-    loadData();
-  }, [activeTab, user.role]);
+    if (activeTab !== 'kitchen') {
+      loadData();
+    }
+  }, [activeTab, user.role, selectedRestaurant]);
 
   const handleTableAdded = (newTable) => {
     setTables((prevTables) => [...prevTables, newTable]);
@@ -70,7 +102,8 @@ const RestaurantPage = () => {
     { id: 'menu', name: 'Menu', icon: '📋', roles: ['customer', 'receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin'] },
     { id: 'reservations', name: 'Reservations', icon: '📅', roles: ['customer', 'receptionist', 'waiter', 'manager', 'admin'] },
     { id: 'orders', name: 'Orders', icon: '🍽️', roles: ['customer', 'receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin'] },
-    { id: 'tables', name: 'Tables', icon: '🪑', roles: ['receptionist', 'waiter', 'manager', 'admin'] }
+    { id: 'tables', name: 'Tables', icon: '🪑', roles: ['receptionist', 'waiter', 'manager', 'admin'] },
+    { id: 'kitchen', name: 'Kitchen', icon: '🍳', roles: ['chef', 'bartender', 'manager', 'admin'] }
   ].filter(tab => tab.roles.includes(user.role));
 
   return (
@@ -92,6 +125,17 @@ const RestaurantPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Restaurant Selector */}
+        {activeTab !== 'kitchen' && (
+          <div className="mt-4">
+            <RestaurantSelector
+              selectedRestaurant={selectedRestaurant}
+              onRestaurantChange={setSelectedRestaurant}
+              showAll={true}
+            />
+          </div>
+        )}
       </div>
 
       {/* Tab Navigation */}
@@ -144,43 +188,139 @@ const RestaurantPage = () => {
       {!loading && (
         <div className="min-h-96">
           {/* Menu Tab */}
-          {activeTab === 'menu' && <MenuTab menu={menu} setMenu={setMenu} userRole={user.role} />}
+          {activeTab === 'menu' && (
+
+            <MenuTab
+
+              menu={menu}
+
+              userRole={user.role}
+                selectedRestaurant={selectedRestaurant}
+              restaurants={restaurants}
+              onEditCategory={(category) => {
+
+                setSelectedCategory(category);
+
+                setShowEditCategoryModal(true);
+
+              }}
+
+            />
+
+          )}
 
           {/* Reservations Tab */}
           {activeTab === 'reservations' && (
-            <ReservationsTab 
-              reservations={reservations} 
-              userRole={user.role}
-              onCreateReservation={() => setShowReservationModal(true)}
-            />
+            <>
+              <ReservationsTab
+                reservations={reservations}
+                userRole={user.role}
+                onCreateReservation={() => {
+                  setEditingReservation(null);
+                  setShowReservationModal(true);
+                }}
+                onEditReservation={(reservation) => {
+                  setEditingReservation(reservation);
+                  setShowReservationModal(true);
+                }}
+                onCancelReservation={async (id) => {
+                  try {
+                    await restaurantReservationApi.cancelReservation(id);
+                    const reservationData = await restaurantReservationApi.getReservations();
+                    setReservations(reservationData.reservations || []);
+                  } catch (err) {
+                    setError(err.message || 'Failed to cancel reservation');
+                  }
+                }}
+              />
+              {showReservationModal && (
+                <ReservationModal
+                  reservation={editingReservation}
+                  onClose={() => setShowReservationModal(false)}
+                  onSave={async () => {
+                    try {
+                      const reservationData = await restaurantReservationApi.getReservations();
+                      setReservations(reservationData.reservations || []);
+                      setShowReservationModal(false);
+                      setEditingReservation(null);
+                    } catch (err) {
+                      setError(err.message || 'Failed to refresh reservations');
+                    }
+                  }}
+                />
+              )}
+            </>
           )}
 
           {/* Orders Tab */}
-          {activeTab === 'orders' && <OrdersTab orders={orders} userRole={user.role} />}
+          {activeTab === 'orders' && (
+            <OrdersTab
+              orders={orders}
+              userRole={user.role}
+              selectedRestaurant={selectedRestaurant}
+              restaurants={restaurants}
+            />
+          )}
 
           {/* Tables Tab */}
           {activeTab === 'tables' && (
             <TablesTab 
               tables={tables} 
               userRole={user.role}
+              selectedRestaurant={selectedRestaurant}
+              restaurants={restaurants}
               onAddTable={() => setShowAddTableModal(true)}
             />
           )}
+
+          {/* Kitchen Tab */}
+          {activeTab === 'kitchen' && <KitchenDashboard />}
         </div>
       )}
+       {/* 🔹 Edit Category Modal */}
 
-    
-    </div>
+{showEditCategoryModal && selectedCategory && (
+        <EditCategoryModal
+          category={selectedCategory}
+          onClose={() => setShowEditCategoryModal(false)}
+          onSave={async (updatedData) => {
+            try {
+              await restaurantMenuApi.updateCategory(selectedCategory.id, updatedData);
+              const updatedMenu = await restaurantMenuApi.getMenu();
+              setMenu(updatedMenu);
+              setShowEditCategoryModal(false);
+            } catch (err) {
+              setError(err.message || "Failed to update category");
+            }
+          }}
+        />
+      )}
+
+       {/*  Reservation Modal */}
+          {showReservationModal && (
+        <ReservationModal
+        onClose={() => setShowReservationModal(false)}
+       onSave={async () => {
+       try {
+        const reservationData = await restaurantReservationApi.getReservations();
+         setReservations(reservationData.reservations || []);
+      } catch (err) {
+        setError(err.message || 'Failed to reload reservations');
+      }
+    }}
+  />
+)}
+
+</div>
   );
 };
 
-// Menu Tab Component
-
-
-const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
+const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory, selectedRestaurant, restaurants}) => {
   const [selectedType, setSelectedType] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [newItem, setNewItem] = useState({
     category_id:"",
@@ -192,7 +332,7 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
     is_vegan: false,
     image_url:"",
   });
-  const [imageUploading, setImageUploading] = useState(false);
+const [imageUploading, setImageUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState("");
 
   const filteredMenu =
@@ -226,8 +366,8 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
         is_vegetarian: false,
         is_vegan: false,
         image_url: "",
-      });
-      setImagePreview("");
+       });
+        setImagePreview("");
       setEditingItem(null);
       setShowAddForm(false);
       await refreshMenu(); // Refresh menu after adding/updating
@@ -248,7 +388,6 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose}) => {
       is_vegan: item.is_vegan,
       image_url: item.image_url || "",
     });
-    setImagePreview(item.image_url || "");
     setShowAddForm(true);
   };
 
@@ -326,6 +465,16 @@ const handleClose = () => {
   );
 };
 
+// Menu Tab Component
+const MenuTab = ({ menu, userRole, onEditCategory, selectedRestaurant, restaurants }) => {
+  const [selectedType, setSelectedType] = useState('all');
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+
+  const filteredMenu = menu.menu?.filter(category =>
+    selectedType === 'all' || category.type === selectedType
+  ) || [];
+
+  const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
 
   return (
     <div className="space-y-6">
@@ -342,27 +491,40 @@ const handleClose = () => {
             <option value="bar">Bar</option>
           </select>
         </div>
-        {["admin", "manager"].includes(userRole) && (
+        {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
           <button
-  onClick={() => {
-    setEditingItem(null); // reset editing
-    setNewItem({
-      category_id: "",
-      name: "",
-      description: "",
-      price: "",
-      preparation_time: "",
-      is_vegetarian: false,
-      is_vegan: false,
-    }); // reset form
-    setShowAddForm(true);
-  }}
-  className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
->
-  Add Menu Item
-</button>
+            onClick={() => setShowAddItemModal(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          >
+            Add Menu Item
+          </button>
         )}
       </div>
+
+      {/* Selected Restaurant Info */}
+      {selectedRestaurantData && (
+        <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <h3 className="font-semibold text-blue-900">{selectedRestaurantData.name}</h3>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {selectedRestaurantData.restaurant_type}
+              </span>
+            </div>
+            <div className="text-sm text-blue-700">
+              📍 {selectedRestaurantData.location.replace('_', ' ')}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!selectedRestaurant && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-yellow-800 text-sm">
+            💡 Select a specific restaurant above to view its menu and add items.
+          </p>
+        </div>
+      )}
 
       {/* Menu Categories */}
       <div className="space-y-6">
@@ -378,15 +540,21 @@ const handleClose = () => {
                   {category.type}
                 </span>
               </div>
-              {["admin", "manager"].includes(userRole) && (
-                <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+              {['admin', 'manager'].includes(userRole) && (
+                <button
+
+                  onClick={() => onEditCategory(category)}
+
+                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+
+                >
                   Edit Category
                 </button>
               )}
             </div>
 
             {/* Menu Items */}
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {category.items?.map((item) => (
                 <div
@@ -458,12 +626,12 @@ const handleClose = () => {
       {showAddForm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-           
+
             <div className="flex items-center justify-between mb-4">
                  <h2 className="text-xl font-semibold mb-4  text-light-orange outline-4 p-2 rounded">
         {editingItem ? "Edit Menu Item" : "Add Menu Item"}
         </h2>
-     
+
        <button
             onClick={handleClose}
             className="text-gray-400 hover:text-gray-600"
@@ -604,20 +772,20 @@ const handleClose = () => {
   )}
 </div>
 
-              
+
               <div className="flex justify-end space-x-3 mt-4">
                 <button
-              
+
                   type="button"
                   onClick={() => setShowAddForm(false)}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
                 >
                   Cancel
                 </button>
-                
+
                 <button
                   type="submit"
-                 
+
                   className="px-4 py-2 text-sm font-medium text-white bg-light-orange rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {editingItem ? "Update Item" : "Save Item"}
@@ -635,7 +803,23 @@ const handleClose = () => {
 
 
 // Reservations Tab Component
-const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
+const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelReservation }) => {
+  const [deletingId, setDeletingId] = React.useState(null);
+  const [deleteError, setDeleteError] = React.useState(null);
+
+  const handleDelete = async (id) => {
+    setDeleteError(null);
+    setDeletingId(id);
+    if (window.confirm('Are you sure you want to delete this reservation?')) {
+      try {
+        await onCancelReservation(id);
+      } catch (err) {
+        setDeleteError(err.message || 'Failed to delete reservation');
+      }
+    }
+    setDeletingId(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -647,6 +831,12 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
           New Reservation
         </button>
       </div>
+
+      {deleteError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3 text-red-700">
+          {deleteError}
+        </div>
+      )}
 
       {/* Reservations List */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -706,11 +896,20 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
                       {reservation.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button className="text-blue-600 hover:text-blue-700 mr-2">Edit</button>
-                    {reservation.status === 'confirmed' && (
-                      <button className="text-red-600 hover:text-red-700">Cancel</button>
-                    )}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
+                    <button
+                      className="text-blue-600 hover:text-blue-700 mr-2"
+                      onClick={() => onEditReservation(reservation)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="text-red-600 hover:text-white bg-red-100 hover:bg-red-600 border border-red-200 rounded px-2 py-1 transition-colors duration-150"
+                      onClick={() => handleDelete(reservation.id)}
+                      disabled={deletingId === reservation.id}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -718,22 +917,62 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation }) => {
           </table>
         </div>
       </div>
-
-      {reservations.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 text-lg">📅</div>
-          <p className="text-gray-600 mt-2">No reservations found</p>
-        </div>
-      )}
     </div>
   );
-};
+}
 
 // Orders Tab Component
-const OrdersTab = ({ orders, userRole }) => {
+const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [transferReason, setTransferReason] = useState('');
+  const [targetKitchen, setTargetKitchen] = useState('');
+  const [kitchens, setKitchens] = useState([]);
+
+  useEffect(() => {
+    // Load available kitchens for transfer functionality
+    const loadKitchens = async () => {
+      try {
+        const { kitchenApi } = require('../../services/restaurantApi');
+        const data = await kitchenApi.getKitchens();
+        setKitchens(data.kitchens || []);
+      } catch (err) {
+        console.error('Failed to load kitchens:', err);
+      }
+    };
+
+    if (['waiter', 'manager', 'admin'].includes(userRole)) {
+      loadKitchens();
+    }
+  }, [userRole]);
+
+  const handleTransferOrder = async () => {
+    if (!selectedOrder || !targetKitchen || !transferReason.trim()) return;
+
+    try {
+      const { kitchenApi } = require('../../services/restaurantApi');
+      await kitchenApi.transferOrderToKitchen(selectedOrder.id, targetKitchen, transferReason);
+
+      // Refresh orders would go here - for now just close modal
+      setShowTransferModal(false);
+      setSelectedOrder(null);
+      setTransferReason('');
+      setTargetKitchen('');
+    } catch (err) {
+      console.error('Failed to transfer order:', err);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-gray-900">Orders</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">Orders</h3>
+        {selectedRestaurant && (
+          <div className="text-sm text-gray-600">
+            Showing orders for: {restaurants.find(r => r.id === selectedRestaurant)?.name || 'All restaurants'}
+          </div>
+        )}
+      </div>
 
       {/* Orders List */}
       <div className="space-y-4">
@@ -770,6 +1009,47 @@ const OrdersTab = ({ orders, userRole }) => {
                     <span className="font-medium">Total:</span> ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}
                   </div>
                 </div>
+
+                {/* Kitchen Status */}
+                {order.kitchen_name && (
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-gray-700">Kitchen:</span>
+                        <span className="text-sm text-gray-900">{order.kitchen_name}</span>
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          order.kitchen_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          order.kitchen_status === 'accepted' ? 'bg-blue-100 text-blue-800' :
+                          order.kitchen_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {order.kitchen_status}
+                        </span>
+                      </div>
+                      {['waiter', 'manager', 'admin'].includes(userRole) && order.kitchen_status === 'pending' && (
+                        <button
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setShowTransferModal(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-700 text-xs font-medium"
+                        >
+                          Transfer Kitchen
+                        </button>
+                      )}
+                    </div>
+                    {order.kitchen_notes && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <span className="font-medium">Kitchen Notes:</span> {order.kitchen_notes}
+                      </div>
+                    )}
+                    {order.estimated_preparation_time && (
+                      <div className="mt-1 text-sm text-gray-600">
+                        <span className="font-medium">Estimated Time:</span> {order.estimated_preparation_time} minutes
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Order Items */}
                 <div className="border-t border-gray-200 pt-4">
@@ -818,18 +1098,84 @@ const OrdersTab = ({ orders, userRole }) => {
           <p className="text-gray-600 mt-2">No orders found</p>
         </div>
       )}
+
+      {/* Transfer Order Modal */}
+      {showTransferModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Transfer Order #{selectedOrder.order_number}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Target Kitchen *
+                </label>
+                <select
+                  value={targetKitchen}
+                  onChange={(e) => setTargetKitchen(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="">Select Kitchen</option>
+                  {kitchens.filter(k => k.id !== selectedOrder.target_kitchen_id).map((kitchen) => (
+                    <option key={kitchen.id} value={kitchen.id}>
+                      {kitchen.kitchen_name} ({kitchen.restaurant_type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for transfer *
+                </label>
+                <textarea
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  rows="3"
+                  required
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Why are you transferring this order?"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setSelectedOrder(null);
+                  setTransferReason('');
+                  setTargetKitchen('');
+                }}
+                className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTransferOrder}
+                disabled={!targetKitchen || !transferReason.trim()}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Transfer Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 // Tables Tab Component
-const TablesTab = ({ tables, userRole, onAddTable }) => {
+const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTable }) => {
+  const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
   const [showAddTable, setShowAddTable] = useState(false);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">Restaurant Tables</h3>
-        {['admin', 'manager'].includes(userRole) && (
+        {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
           <button
             onClick={() => setShowAddTable(true)}
             className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
@@ -838,6 +1184,31 @@ const TablesTab = ({ tables, userRole, onAddTable }) => {
           </button>
         )}
       </div>
+
+      {/* Restaurant Info */}
+      {selectedRestaurantData && (
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <h4 className="font-semibold text-blue-900">{selectedRestaurantData.name}</h4>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {selectedRestaurantData.restaurant_type}
+              </span>
+            </div>
+            <div className="text-sm text-blue-700">
+              Total Tables: {tables.length} | Max Capacity: {selectedRestaurantData.max_capacity}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!selectedRestaurant && (
+        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-yellow-800 text-sm">
+            💡 Select a specific restaurant above to view and manage its tables.
+          </p>
+        </div>
+      )}
 
         {/* {showAddTable && (
     <AddTableModal onClose={() => setShowAddTable(false)} />
@@ -870,6 +1241,14 @@ const TablesTab = ({ tables, userRole, onAddTable }) => {
                   {table.location.replace('_', ' ')}
                 </span>
               </div>
+              {table.restaurant_name && (
+                <div className="flex items-center justify-between">
+                  <span>Restaurant:</span>
+                  <span className="text-xs font-medium text-gray-700">
+                    {table.restaurant_name}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -889,8 +1268,9 @@ const TablesTab = ({ tables, userRole, onAddTable }) => {
           )}
         </div>
       )}
+
     </div>
   );
-};
+}
 
 export default RestaurantPage;

@@ -3,6 +3,8 @@ import axios from 'axios';
 
 // Import restaurant API functions
 import { 
+  restaurantApi,
+  kitchenApi,
   restaurantTableApi,
   restaurantMenuApi,
   restaurantReservationApi,
@@ -206,19 +208,47 @@ export const roomApi = {
     return response.data.availableRooms;
   },
 
-  // Placeholder methods for future implementation
+  // Booking management
   async createBooking(bookingData) {
-    throw new Error('Booking API not yet implemented in backend');
+    const response = await api.post('/bookings', bookingData);
+    return response.data;
   },
 
-  async getBookings(userId = null) {
-    throw new Error('Booking API not yet implemented in backend');
+  async getBookings(params = {}) {
+    const response = await api.get('/bookings', { params });
+    return response.data;
+  },
+
+  async getMyBookings(params = {}) {
+    const response = await api.get('/bookings/my-bookings', { params });
+    return response.data;
+  },
+
+  async getBookingById(id) {
+    const response = await api.get(`/bookings/${id}`);
+    return response.data;
+  },
+
+  async updateBookingStatus(id, status, notes = null) {
+    const response = await api.patch(`/bookings/${id}/status`, { status, notes });
+    return response.data;
+  },
+
+  async cancelBooking(id, reason = null) {
+    const response = await api.patch(`/bookings/${id}/cancel`, { reason });
+    return response.data;
   }
 };
 
 
 // Restaurant API - now properly implemented
-export const restaurantApi = {
+export const restaurantApiService = {
+  // Restaurant management
+  ...restaurantApi,
+  
+  // Kitchen management
+  ...kitchenApi,
+  
   // Table management
   ...restaurantTableApi,
   
@@ -249,7 +279,7 @@ const apiServices = {
   dashboard: dashboardApi,
   users: userApi,
   rooms: roomApi,
-  restaurant: restaurantApi,
+  restaurant: restaurantApiService,
   offers: offersApi
 };
 

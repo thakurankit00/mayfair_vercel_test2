@@ -37,15 +37,69 @@ const getMetrics = async (req, res, next) => {
         FROM room_bookings
       `);
       
-      const totalRooms = await db('rooms').count('id as count').first();
-      const occupiedRooms = await db('rooms').where('status', 'occupied').count('id as count').first();
-      const occupancyRate = totalRooms.count > 0 ? Math.round((occupiedRooms.count / totalRooms.count) * 100) : 0;
+      // Calculate real-time room availability using proper rooms table
+      const roomStatsQuery = await db.raw(`
+        SELECT 
+          COUNT(r.id) as total_rooms,
+          COUNT(DISTINCT rt.id) as room_types_count,
+          COUNT(CASE WHEN r.status = 'available' THEN 1 END) as available_rooms,
+          COUNT(CASE WHEN r.status = 'occupied' THEN 1 END) as occupied_rooms,
+          COUNT(CASE WHEN r.status = 'maintenance' THEN 1 END) as maintenance_rooms,
+          COUNT(CASE WHEN r.status = 'cleaning' THEN 1 END) as cleaning_rooms
+        FROM rooms r
+        JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE rt.is_active = true
+      `);
+      
+      const roomStats = roomStatsQuery.rows[0] || {};
+      const totalRooms = parseInt(roomStats.total_rooms || 0);
+      const roomTypesCount = parseInt(roomStats.room_types_count || 0);
+      const availableRoomsFromStatus = parseInt(roomStats.available_rooms || 0);
+      
+      // Count actually booked rooms for today (considering current bookings)
+      const todayBookedQuery = await db.raw(`
+        SELECT COUNT(DISTINCT rb.room_id) as booked_count
+        FROM room_bookings rb
+        WHERE rb.status IN ('confirmed', 'checked_in') 
+          AND CURRENT_DATE >= DATE(rb.check_in_date) 
+          AND CURRENT_DATE < DATE(rb.check_out_date)
+      `);
+      
+      const bookedRooms = parseInt(todayBookedQuery.rows[0]?.booked_count || 0);
+      
+      // Calculate available rooms more accurately:
+      // Start with rooms that are physically available, then subtract those with active bookings
+      const actuallyAvailableQuery = await db.raw(`
+        SELECT COUNT(r.id) as truly_available
+        FROM rooms r
+        JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE rt.is_active = true 
+          AND r.status = 'available'
+          AND NOT EXISTS (
+            SELECT 1 FROM room_bookings rb
+            WHERE rb.room_id = r.id
+              AND rb.status IN ('confirmed', 'checked_in')
+              AND CURRENT_DATE >= DATE(rb.check_in_date)
+              AND CURRENT_DATE < DATE(rb.check_out_date)
+          )
+      `);
+      
+      const availableRooms = parseInt(actuallyAvailableQuery.rows[0]?.truly_available || 0);
+      const occupancyRate = totalRooms > 0 ? Math.round((bookedRooms / totalRooms) * 100) : 0;
       
       metrics.bookings = {
         today: parseInt(bookingQuery.rows[0]?.today || 0),
         thisWeek: parseInt(bookingQuery.rows[0]?.thisweek || 0),
         thisMonth: parseInt(bookingQuery.rows[0]?.thismonth || 0),
         occupancyRate
+      };
+      
+      // Add room availability metrics
+      metrics.rooms = {
+        total: totalRooms,
+        available: availableRooms,
+        booked: bookedRooms,
+        roomTypes: roomTypesCount
       };
     }
 
