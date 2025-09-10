@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import MenuItemActions from './MenuItemActions';
 import EditCategoryModal from './EditCategoryModal';
 import ReservationModal from './ReservationModal';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,7 +14,6 @@ import {
 } from '../../services/restaurantApi';
 import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-import AddTableModal from './AddTableForm';
 import RestaurantSelector from './RestaurantSelector';
 import KitchenDashboard from './KitchenDashboard';
 
@@ -279,7 +279,7 @@ const RestaurantPage = () => {
       )}
        {/* 🔹 Edit Category Modal */}
 
-{showEditCategoryModal && selectedCategory && (
+      {showEditCategoryModal && selectedCategory && (
         <EditCategoryModal
           category={selectedCategory}
           onClose={() => setShowEditCategoryModal(false)}
@@ -466,18 +466,62 @@ const handleClose = () => {
 };
 
 // Menu Tab Component
-const MenuTab = ({ menu, userRole, onEditCategory, selectedRestaurant, restaurants }) => {
+const MenuTab = ({ menu,setMenu, userRole,onClose, onEditCategory, selectedRestaurant, restaurants }) => {
   const [selectedType, setSelectedType] = useState('all');
-  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newItem, setNewItem] = useState({
+    category_id: '',
+    name: '',
+    description: '',
+    price: '',
+    preparation_time: '',
+    is_vegetarian: false,
+    is_vegan: false,
+    image_url: ''
+  });
+  const [editingItem, setEditingItem] = useState(null);
 
-  const filteredMenu = menu.menu?.filter(category =>
+  // Handler to close modal
+  const handleClose = () => {
+    setShowAddForm(false);
+    setEditingItem(null);
+    setNewItem({
+      category_id: '',
+      name: '',
+      description: '',
+      price: '',
+      preparation_time: '',
+      is_vegetarian: false,
+      is_vegan: false,
+      image_url: ''
+    });
+  };
+
+  // Handler for input changes
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setNewItem((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  // Handler for add/edit item
+  const handleAddItem = (e) => {
+    e.preventDefault();
+    // Add logic to save newItem or update editingItem
+    // For now, just close modal
+    handleClose();
+  };
+
+  const filteredMenu = menu.menu?.filter(category => 
     selectedType === 'all' || category.type === selectedType
   ) || [];
 
   const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
 
   return (
-    <div className="space-y-6">
+  <div className="space-y-6">
       {/* Menu Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -493,8 +537,8 @@ const MenuTab = ({ menu, userRole, onEditCategory, selectedRestaurant, restauran
         </div>
         {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
           <button
-            onClick={() => setShowAddItemModal(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            onClick={() => setShowAddForm(true)}
+            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
           >
             Add Menu Item
           </button>
@@ -804,20 +848,20 @@ const MenuTab = ({ menu, userRole, onEditCategory, selectedRestaurant, restauran
 
 // Reservations Tab Component
 const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelReservation }) => {
-  const [deletingId, setDeletingId] = React.useState(null);
-  const [deleteError, setDeleteError] = React.useState(null);
+  const [cancelingId, setCancelingId] = React.useState(null);
+  const [cancelError, setCancelError] = React.useState(null);
 
-  const handleDelete = async (id) => {
-    setDeleteError(null);
-    setDeletingId(id);
-    if (window.confirm('Are you sure you want to delete this reservation?')) {
+  const handleCancel  = async (id) => {
+    setCancelError(null);
+    setCancelingId(id);
+    if (window.confirm('Are you sure you want to cancel this reservation?')) {
       try {
         await onCancelReservation(id);
       } catch (err) {
-        setDeleteError(err.message || 'Failed to delete reservation');
+        setCancelError(err.message || 'Failed to cancel reservation');
       }
     }
-    setDeletingId(null);
+    setCancelingId(null);
   };
 
   return (
@@ -826,15 +870,15 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
         <h3 className="text-lg font-semibold text-gray-900">Table Reservations</h3>
         <button
           onClick={onCreateReservation}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
         >
           New Reservation
         </button>
       </div>
 
-      {deleteError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3 text-red-700">
-          {deleteError}
+      {cancelError  && (
+        <div className="mb-4 bg-red-50 border border-white rounded-md p-3 text-red-700">
+          {cancelError }
         </div>
       )}
 
@@ -904,11 +948,11 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
                       Edit
                     </button>
                     <button
-                      className="text-red-600 hover:text-white bg-red-100 hover:bg-red-600 border border-red-200 rounded px-2 py-1 transition-colors duration-150"
-                      onClick={() => handleDelete(reservation.id)}
-                      disabled={deletingId === reservation.id}
+                      className="text-yellow-600 hover:text-white bg-yellow-100 hover:bg-yellow-600 border border-yellow-200 rounded px-2 py-1 transition-colors duration-150"
+                      onClick={() => handleCancel(reservation.id)}
+                      disabled={cancelingId === reservation.id}
                     >
-                      Delete
+                      {cancelingId === reservation.id ? 'Cancelling...' : 'Cancel'}
                     </button>
                   </td>
                 </tr>
@@ -923,11 +967,13 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
 
 // Orders Tab Component
 const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [transferReason, setTransferReason] = useState('');
-  const [targetKitchen, setTargetKitchen] = useState('');
-  const [kitchens, setKitchens] = useState([]);
+  const [cancelingId, setCancelingId] = React.useState(null);
+  const [cancelError, setCancelError] = React.useState(null);
+  const [transferReason, setTransferReason] = React.useState('');
+  const [targetKitchen, setTargetKitchen] = React.useState('');
+  const [kitchens, setKitchens] = React.useState([]);
+  const [showTransferModal, setShowTransferModal] = React.useState(false);
+  const [selectedOrder, setSelectedOrder] = React.useState(null);
 
   useEffect(() => {
     // Load available kitchens for transfer functionality
@@ -1169,7 +1215,6 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
 // Tables Tab Component
 const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTable }) => {
   const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
-  const [showAddTable, setShowAddTable] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -1177,8 +1222,8 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
         <h3 className="text-lg font-semibold text-gray-900">Restaurant Tables</h3>
         {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
           <button
-            onClick={() => setShowAddTable(true)}
-            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
+            onClick={onAddTable}
+            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
           >
             Add Table
           </button>
@@ -1210,9 +1255,6 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
         </div>
       )}
 
-        {/* {showAddTable && (
-    <AddTableModal onClose={() => setShowAddTable(false)} />
-     */}
       {/* Tables Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tables.map((table) => (

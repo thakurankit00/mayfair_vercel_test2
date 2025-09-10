@@ -9,13 +9,13 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Import API inline to avoid circular dependency
   const { restaurantMenuApi } = require('../../services/restaurantApi');
 
   const handleDelete = async () => {
     setError('');
-    if (!window.confirm('Are you sure you want to delete this category?')) return;
     setDeleting(true);
     try {
       await restaurantMenuApi.deleteCategory(category.id);
@@ -54,7 +54,9 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
         >
           &times;
         </button>
-        <h2 className="text-lg font-semibold mb-4 bg-blue-600 text-white p-2 rounded">Edit Category</h2>
+        <h2 className="text-lg font-semibold mb-4 bg-light-orange text-white p-2 rounded">
+          Edit Category
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Name</label>
@@ -92,7 +94,9 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
               <option value="rooftop">RoofTop</option>
             </select>
           </div>
+
           {error && <div className="text-red-600 text-sm">{error}</div>}
+
           <div className="flex flex-col gap-2 mt-6">
             <div className="flex justify-end space-x-2">
               <button
@@ -105,20 +109,47 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
                 disabled={saving || deleting}
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
-            <button
-              type="button"
-              className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded mt-4"
-              onClick={handleDelete}
-              disabled={deleting || saving}
-            >
-              {deleting ? 'Deleting...' : 'Delete Category'}
-            </button>
+
+            {/* Delete flow */}
+            {!showDeleteConfirm ? (
+              <button
+                type="button"
+                className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded mt-4"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={saving}
+              >
+                Delete Category
+              </button>
+            ) : (
+              <div className="mt-4 bg-red-50 border border-red-200 p-3 rounded text-sm">
+                <p className="text-red-700 mb-2">
+                  Are you sure you want to delete this category?
+                </p>
+                <div className="flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                    onClick={() => setShowDeleteConfirm(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? 'Deleting...' : 'Confirm Delete'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </form>
       </div>
