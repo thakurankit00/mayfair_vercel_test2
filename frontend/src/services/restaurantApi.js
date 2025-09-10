@@ -59,6 +59,24 @@ export const restaurantApi = {
   getRestaurantById: async (id) => {
     const response = await api.get(`/restaurant/restaurants/${id}`);
     return response.data.data;
+  },
+
+  // Create new restaurant
+  createRestaurant: async (restaurantData) => {
+    const response = await api.post('/restaurant/restaurants', restaurantData);
+    return response.data.data;
+  },
+
+  // Update restaurant
+  updateRestaurant: async (restaurantId, restaurantData) => {
+    const response = await api.put(`/restaurant/restaurants/${restaurantId}`, restaurantData);
+    return response.data.data;
+  },
+
+  // Delete restaurant
+  deleteRestaurant: async (restaurantId) => {
+    const response = await api.delete(`/restaurant/restaurants/${restaurantId}`);
+    return response.data;
   }
 };
 
@@ -120,6 +138,24 @@ export const kitchenApi = {
   getOrderKitchenLogs: async (orderId) => {
     const response = await api.get(`/restaurant/orders/${orderId}/kitchen-logs`);
     return response.data.data;
+  },
+
+  // Create new kitchen
+  createKitchen: async (kitchenData) => {
+    const response = await api.post('/restaurant/kitchens', kitchenData);
+    return response.data.data;
+  },
+
+  // Update kitchen
+  updateKitchen: async (kitchenId, kitchenData) => {
+    const response = await api.put(`/restaurant/kitchens/${kitchenId}`, kitchenData);
+    return response.data.data;
+  },
+
+  // Delete kitchen
+  deleteKitchen: async (kitchenId) => {
+    const response = await api.delete(`/restaurant/kitchens/${kitchenId}`);
+    return response.data;
   }
 };
 
@@ -142,8 +178,8 @@ export const restaurantTableApi = {
   },
 
   // Create new table
-  createTable: async (restaurantId, tableData) => {
-    const response = await api.post(`/restaurant/restaurants/${restaurantId}/tables`, tableData);
+  createTable: async (tableData) => {
+    const response = await api.post('/restaurant/tables', tableData);
     return response.data.data;
   },
 
@@ -187,8 +223,8 @@ export const restaurantMenuApi = {
   },
 
   // Create menu category
-  createCategory: async (restaurantId, categoryData) => {
-    const response = await api.post(`/restaurant/restaurants/${restaurantId}/menu/categories`, categoryData);
+  createCategory: async (categoryData) => {
+    const response = await api.post('/restaurant/menu/categories', categoryData);
     return response.data.data;
   },
 
@@ -312,6 +348,12 @@ export const restaurantOrderApi = {
   // Add items to order
   addOrderItems: async (id, items) => {
     const response = await api.put(`/restaurant/orders/${id}/items`, { items });
+    return response.data.data;
+  },
+
+  // Generate bill for order
+  generateBill: async (orderId) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/bill`);
     return response.data.data;
   }
 };

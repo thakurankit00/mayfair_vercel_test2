@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { SocketProvider } from './contexts/SocketContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import Layout from './components/layout/Layout';
@@ -8,6 +9,7 @@ import LoginForm from './components/auth/LoginForm';
 import Dashboard from './components/dashboard/Dashboard';
 import RoomsPage from './components/rooms/RoomsPage';
 import RestaurantPage from './components/restaurant/RestaurantPage';
+import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
 
 // Placeholder components for routes that aren't built yet
 const PlaceholderPage = ({ title }) => (
@@ -28,8 +30,9 @@ const App = () => {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Router>
-          <div className="App">
+        <SocketProvider>
+          <Router>
+            <div className="App">
             <Routes>
               {/* Public routes */}
               <Route 
@@ -93,6 +96,18 @@ const App = () => {
                   <ProtectedRoute roles={['waiter', 'chef', 'bartender', 'manager', 'admin']}>
                     <Layout>
                       <PlaceholderPage title="Order Management" />
+                    </Layout>
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* Waiter Interface */}
+              <Route 
+                path="/waiter" 
+                element={
+                  <ProtectedRoute roles={['waiter', 'manager', 'admin']}>
+                    <Layout>
+                      <WaiterOrderInterface />
                     </Layout>
                   </ProtectedRoute>
                 } 
@@ -213,8 +228,9 @@ const App = () => {
                 } 
               />
             </Routes>
-          </div>
-        </Router>
+            </div>
+          </Router>
+        </SocketProvider>
       </AuthProvider>
     </ErrorBoundary>
   );
