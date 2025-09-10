@@ -320,8 +320,9 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory, selectedRes
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
-
   const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imagePreview, setImagePreview] = useState("");
   const [newItem, setNewItem] = useState({
     category_id:"",
     name: "",
@@ -332,14 +333,13 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory, selectedRes
     is_vegan: false,
     image_url:"",
   });
-const [imageUploading, setImageUploading] = useState(false);
-  const [imagePreview, setImagePreview] = useState("");
 
-  const filteredMenu =
+
+    const filteredMenu =
     menu.menu?.filter(
       (category) => selectedType === "all" || category.type === selectedType
     ) || [];
-    const handleInputChange = (e) => {
+  const handleInputChange = (e) => {
   const { name, value, type, checked } = e.target;
   setNewItem((prev) => ({
     ...prev,
@@ -424,101 +424,7 @@ const handleClose = () => {
   });
   setImagePreview("");
 };
-
-  const MenuItemActions = ({ item }) => {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="relative inline-block text-left">
-      <button
-        onClick={() => setOpen(!open)}
-        className="text-gray-400 hover:text-gray-600 focus:outline-none"
-      >
-        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-          <button
-            onClick={() => {
-              handleEditClick(item);
-              setOpen(false);
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-light-orange hover:bg-blue-100 hover:text-blue-800 rounded-t-md"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => {
-              handleDeleteClick(item.id);
-              setOpen(false);
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-100 hover:text-red-800 rounded-b-md"
-          >
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Menu Tab Component
-const MenuTab = ({ menu,setMenu, userRole,onClose, onEditCategory, selectedRestaurant, restaurants }) => {
-  const [selectedType, setSelectedType] = useState('all');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({
-    category_id: '',
-    name: '',
-    description: '',
-    price: '',
-    preparation_time: '',
-    is_vegetarian: false,
-    is_vegan: false,
-    image_url: ''
-  });
-  const [editingItem, setEditingItem] = useState(null);
-
-  // Handler to close modal
-  const handleClose = () => {
-    setShowAddForm(false);
-    setEditingItem(null);
-    setNewItem({
-      category_id: '',
-      name: '',
-      description: '',
-      price: '',
-      preparation_time: '',
-      is_vegetarian: false,
-      is_vegan: false,
-      image_url: ''
-    });
-  };
-
-  // Handler for input changes
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setNewItem((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  // Handler for add/edit item
-  const handleAddItem = (e) => {
-    e.preventDefault();
-    // Add logic to save newItem or update editingItem
-    // For now, just close modal
-    handleClose();
-  };
-
-  const filteredMenu = menu.menu?.filter(category => 
-    selectedType === 'all' || category.type === selectedType
-  ) || [];
-
-  const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
+const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
 
   return (
   <div className="space-y-6">
@@ -1314,5 +1220,5 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
     </div>
   );
 }
-
+ }
 export default RestaurantPage;
