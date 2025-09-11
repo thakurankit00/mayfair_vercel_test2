@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSocket } from '../../contexts/SocketContext';
 import { kitchenApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 const KitchenDashboard = () => {
   const { user } = useAuth();
+  const { notifications, isConnected } = useSocket();
   const [kitchens, setKitchens] = useState([]);
   const [selectedKitchen, setSelectedKitchen] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -54,10 +56,13 @@ const KitchenDashboard = () => {
 
     fetchKitchenOrders();
     
-    // Set up polling for real-time updates
-    const interval = setInterval(fetchKitchenOrders, 10000); // Every 10 seconds
-    return () => clearInterval(interval);
-  }, [selectedKitchen]);
+    // Refresh orders when new order notifications arrive
+    const newOrderNotifications = notifications.filter(n => n.type === 'new-order');
+    if (newOrderNotifications.length > 0) {
+      fetchKitchenOrders();
+    }
+    
+  }, [selectedKitchen, notifications]);
 
   const handleAcceptOrder = async (orderId, estimatedTime = null, notes = null) => {
     try {
@@ -154,6 +159,16 @@ const KitchenDashboard = () => {
                 {selectedKitchenData.kitchen_name}
               </h2>
               <p className="text-gray-600">{selectedKitchenData.name}</p>
+              <div className="mt-2 flex items-center space-x-4">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full mr-1.5 ${
+                    isConnected ? 'bg-green-400' : 'bg-red-400'
+                  }`}></span>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </div>
             <div className="flex items-center space-x-6">
               <div className="text-center">

@@ -1,0 +1,187 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  restaurantApi,
+  restaurantTableApi,
+  restaurantMenuApi, 
+  restaurantReservationApi, 
+  restaurantOrderApi 
+} from '../../services/restaurantApi';
+import LoadingSpinner from '../common/LoadingSpinner';
+import RestaurantSelector from './RestaurantSelector';
+import KitchenDashboard from './KitchenDashboard';
+
+const RestaurantPage = () => {
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('menu');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
+
+  // Data states
+  const [restaurants, setRestaurants] = useState([]);
+  const [tables, setTables] = useState([]);
+  const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
+  const [reservations, setReservations] = useState([]);
+  const [orders, setOrders] = useState([]);
+
+
+  // Load restaurants on component mount
+  useEffect(() => {
+    const loadRestaurants = async () => {
+      try {
+        const data = await restaurantApi.getRestaurants();
+        setRestaurants(data.restaurants || []);
+      } catch (err) {
+        setError(err.message || 'Failed to load restaurants');
+      }
+    };
+
+    loadRestaurants();
+  }, []);
+
+  // Load data based on user role, active tab, and selected restaurant
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        switch (activeTab) {
+          case 'tables':
+            if (['admin', 'manager', 'receptionist', 'waiter'].includes(user.role)) {
+              const tableData = await restaurantTableApi.getTables(selectedRestaurant);
+              setTables(tableData.tables || []);
+            }
+            break;
+          case 'menu':
+            const menuData = await restaurantMenuApi.getMenu(selectedRestaurant);
+            setMenu(menuData);
+            break;
+          case 'reservations':
+            const reservationData = await restaurantReservationApi.getReservations();
+            setReservations(reservationData.reservations || []);
+            break;
+          case 'orders':
+            const orderData = await restaurantOrderApi.getOrders();
+            setOrders(orderData.orders || []);
+            break;
+          case 'kitchen':
+            // Kitchen data is loaded within KitchenDashboard component
+            break;
+          default:
+            break;
+        }
+      } catch (err) {
+        setError(err.message || 'Failed to load data');
+      }
+      setLoading(false);
+    };
+
+    if (activeTab !== 'kitchen') {
+      loadData();
+    }
+  }, [activeTab, user.role, selectedRestaurant]);
+
+  const tabs = [
+    { id: 'menu', name: 'Menu', icon: '📋', roles: ['customer', 'receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin'] },
+    { id: 'reservations', name: 'Reservations', icon: '📅', roles: ['customer', 'receptionist', 'waiter', 'manager', 'admin'] },
+    { id: 'orders', name: 'Orders', icon: '🍽️', roles: ['customer', 'receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin'] },
+    { id: 'tables', name: 'Tables', icon: '🪑', roles: ['receptionist', 'waiter', 'manager', 'admin'] },
+    { id: 'kitchen', name: 'Kitchen', icon: '🍳', roles: ['chef', 'bartender', 'manager', 'admin'] }
+  ].filter(tab => tab.roles.includes(user.role));
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Restaurant Management</h1>
+            <p className="mt-2 text-gray-600">
+              Manage restaurant operations, bookings, and orders
+            </p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="bg-blue-50 px-4 py-2 rounded-lg">
+              <div className="text-sm font-medium text-blue-900">
+                Role: {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Restaurant Selector */}
+        {activeTab !== 'kitchen' && (
+          <div className="mt-4">
+            <RestaurantSelector
+              selectedRestaurant={selectedRestaurant}
+              onRestaurantChange={setSelectedRestaurant}
+              showAll={true}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex items-center space-x-2 ${
+                activeTab === tab.id
+                  ? 'border-light-orange text-light-orange'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.name}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-800">{error}</p>
+          <button
+            onClick={() => setError('')}
+            className="mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div className="flex justify-center items-center py-12">
+          <LoadingSpinner />
+        </div>
+      )}
+
+      {/* Tab Content */}
+      {!loading && (
+        <div className="min-h-96">
+          {/* Kitchen Tab */}
+          {activeTab === 'kitchen' && <KitchenDashboard />}
+          
+          {/* Other tabs - simplified for now */}
+          {activeTab !== 'kitchen' && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                {tabs.find(t => t.id === activeTab)?.name} Management
+              </h2>
+              <p className="text-gray-600">
+                {activeTab} functionality will be implemented here.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default RestaurantPage;
