@@ -439,6 +439,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
   const [error, setError] = useState(""); // Added error state
   const [newItem, setNewItem] = useState({
     category_id: "",
+    category_id: "",
     name: "",
     description: "",
     price: "",
@@ -446,23 +447,22 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
     is_vegetarian: false,
     is_vegan: false,
     image_url: "",
+    image_url: "",
   });
-  const [imageUploading, setImageUploading] = useState(false);
-  const [imagePreview, setImagePreview] = useState("");
 
   const filteredMenu =
     menu.menu?.filter(
       (category) => selectedType === "all" || category.type === selectedType
     ) || [];
-    const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
-    const handleInputChange = (e) => {
-  const { name, value, type, checked } = e.target;
-  setNewItem((prev) => ({
-    ...prev,
-    [name]: type === "checkbox" ? checked : value,
-  }));
 
-  // Clear error when user starts typing
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setNewItem((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+    
+    // Clear error when user starts typing
     if (error) setError("");
   };
 
@@ -596,7 +596,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
       description: item.description,
       price: item.price.toString(),
       preparation_time: item.preparation_time?.toString() || "",
-      category_id: item.category_id,
       is_vegetarian: item.is_vegetarian,
       is_vegan: item.is_vegan,
       image_url: item.image_url || "",
@@ -623,30 +622,32 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
   };
 
   const refreshMenu = async () => {
-  try {
-    const menuData = await restaurantMenuApi.getMenu();
-    setMenu(menuData);
-  } catch (err) {
-    console.error("Refresh menu error:", err);
-    setError("Failed to refresh menu");
-  }
-};
-const handleClose = () => {
-  setShowAddForm(false);
-  setEditingItem(null);
-  setError("");
-  setNewItem({
-    category_id: "",
-    name: "",
-    description: "",
-    price: "",
-    preparation_time: "",
-    is_vegetarian: false,
-    is_vegan: false,
-    image_url: "",
-  });
-  setImagePreview("");
-};
+    try {
+      console.log("Refreshing menu...");
+      const menuData = await restaurantMenuApi.getMenu();
+      setMenu(menuData);
+    } catch (err) {
+      console.error("Refresh menu error:", err);
+      setError("Failed to refresh menu");
+    }
+  };
+
+  const handleClose = () => {
+    setShowAddForm(false);
+    setEditingItem(null);
+    setError(""); // Clear errors
+    setNewItem({
+      category_id: "",
+      name: "",
+      description: "",
+      price: "",
+      preparation_time: "",
+      is_vegetarian: false,
+      is_vegan: false,
+      image_url: "",
+    });
+    setImagePreview("");
+  };
 
   const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
 
@@ -660,37 +661,11 @@ const handleClose = () => {
             onClick={() => setError("")}
             className="text-red-500 text-xs underline mt-1"
           >
-          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-          </svg>
-        </button>
-
-        {open && (
-          <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-            <button
-              onClick={() => {
-                handleEditClick(item);
-                setOpen(false);
-              }}
-              className="w-full text-left px-4 py-2 text-sm text-light-orange hover:bg-blue-100 hover:text-blue-800 rounded-t-md"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => {
-                handleDeleteClick(item.id);
-                setOpen(false);
-              }}
-              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-100 hover:text-red-800 rounded-b-md"
-            >
-              Delete
+            Dismiss
           </button>
         </div>
       )}
-      </div>
-    )};
-    return (
-    <div className="space-y-6"></div>
+
       {/* Menu Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -877,15 +852,16 @@ const handleClose = () => {
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                   disabled={loading}
-    >
-      <option value="">Select Category</option>
-      {menu.menu?.map((cat) => (
-        <option key={cat.id} value={cat.id}>
-          {cat.name}
-        </option>
-      ))}
-    </select>
-  </div>
+                >
+                  <option value="">Select Category</option>
+                  {menu.menu?.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium">Name *</label>
                 <input
@@ -981,32 +957,32 @@ const handleClose = () => {
                   disabled={loading || imageUploading}
                 />
 
-  {/* Preview Image */}
-  {(imagePreview || newItem.image_url) && (
-    <div className="mt-2">
-    <img
-      src={imagePreview || newItem.image_url}
-      alt="Preview"
-      className="w-32 h-32 object-cover rounded mt-2 border"
-    />
-    {newItem.image_url && !imagePreview && (
+                {/* Preview Image */}
+                {(imagePreview || newItem.image_url) && (
+                  <div className="mt-2">
+                    <img
+                      src={imagePreview || newItem.image_url}
+                      alt="Preview"
+                      className="w-32 h-32 object-cover rounded border"
+                    />
+                    {newItem.image_url && !imagePreview && (
                       <p className="text-xs text-green-600 mt-1">
                         ✓ Current image
                       </p>
-  )}
-  </div>
+                    )}
+                  </div>
                 )}
-  {imageUploading && (
-    <p className="text-xs text-blue-500 mt-1">Uploading image...</p>
-  )}
-</div>
+                
+                {imageUploading && (
+                  <p className="text-xs text-blue-500 mt-1">Uploading image...</p>
+                )}
+              </div>
 
-
-              <div className="flex justify-end space-x-3 mt-4">
+              <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                  onClick={handleClose}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
                   disabled={loading || imageUploading}
                 >
                   Cancel
@@ -1030,21 +1006,6 @@ const handleClose = () => {
 
 // Reservations Tab Component
 const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelRequest, cancelingId, cancelError }) => {
-    const [deletingId, setDeletingId] = React.useState(null);
-  const [deleteError, setDeleteError] = React.useState(null);
-
-  const handleDelete = async (id) => {
-    setDeleteError(null);
-    setDeletingId(id);
-    if (window.confirm('Are you sure you want to delete this reservation?')) {
-      try {
-        await onCancelReservation(id);
-      } catch (err) {
-        setDeleteError(err.message || 'Failed to delete reservation');
-      }
-    }
-    setDeletingId(null);
-  };
 
   return (
     <div className="space-y-6">
@@ -1267,16 +1228,6 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
                     {order.items?.map((item, index) => (
                       <div key={index} className="flex justify-between text-sm">
                         <span>{item.quantity}x {item.name}</span>
-                         <span className="text-sm font-medium text-gray-700">Kitchen:</span>
-                        <span className="text-sm text-gray-900">{order.kitchen_name}</span>
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          order.kitchen_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          order.kitchen_status === 'accepted' ? 'bg-blue-100 text-blue-800' :
-                          order.kitchen_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {order.kitchen_status}
-                        </span>
                         <span>₹{item.price * item.quantity}</span>
                       </div>
                     ))}
@@ -1426,7 +1377,8 @@ const TableActions = ({ table, onEdit, onDelete }) => {
 const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tableList, setTableList] = useState(tables || []);
-      useEffect(() => {
+
+  useEffect(() => {
     setTableList(tables || []);
   }, [tables]);
 
@@ -1558,6 +1510,7 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants }) => {
         restaurantId={selectedRestaurant}
       />
     </div>
-    );
-  }; 
+  );
+};
+ 
 export default RestaurantPage;
