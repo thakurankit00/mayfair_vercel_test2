@@ -164,6 +164,14 @@ export const restaurantTableApi = {
 // MENU MANAGEMENT API
 // ============================================================================
 
+export const uploadApi = {
+  // Upload base64 image to backend -> Cloudinary
+  uploadImage: async (base64Image) => {
+    const response = await api.post('/upload', { image: base64Image });
+    return response.data; // { success, url, public_id }
+  },
+};
+
 export const restaurantMenuApi = {
   // Get menu categories
   getCategories: async (restaurantId = null, type = null) => {

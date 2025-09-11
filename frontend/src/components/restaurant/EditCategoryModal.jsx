@@ -54,7 +54,7 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
         >
           &times;
         </button>
-        <h2 className="text-lg font-semibold mb-4 bg-light-orange text-white p-2 rounded">
+        <h2 className="text-lg font-semibold mb-4 text-light-orange outline-4  p-2 rounded">
           Edit Category
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
