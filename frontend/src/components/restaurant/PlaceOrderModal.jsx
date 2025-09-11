@@ -393,7 +393,7 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
               </button>
               <button
                 onClick={handleSubmitOrder}
-                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
                 disabled={loading || selectedItems.length === 0}
               >
                 {loading ? 'Placing...' : 'Place Order'}

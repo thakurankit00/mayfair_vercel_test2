@@ -1109,7 +1109,7 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
 };
 
 // Orders Tab Component
-const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
+const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants, onPlaceOrder }) => {
   const [cancelingId, setCancelingId] = React.useState(null);
   const [cancelError, setCancelError] = React.useState(null);
   const [transferReason, setTransferReason] = React.useState('');
@@ -1151,15 +1151,8 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
       console.error('Failed to transfer order:', err);
     }
   };
-  const onPlaceOrder = () => {
-    if (!selectedRestaurant) {
-      alert("Please select a restaurant before placing an order");
-      return;
-    }
-    // TODO: integrate with API
-    console.log(`Placing new order for restaurant ${selectedRestaurant}`);
-    // Example: open a modal or redirect to order form
-  };
+  // Use the onPlaceOrder prop from RestaurantPage
+  // ...existing code...
 
   return (
   <div className="space-y-6">
@@ -1243,7 +1236,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
                       setSelectedOrder(order);
                       setShowTransferModal(true);
                     }}
-                    className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                    className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
                   >
                     Transfer
                   </button>
@@ -1274,7 +1267,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
       {showTransferModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Transfer Order</h3>
+            <h3 className="px-4 py-2 bg-light-orange text-white rounded hover">Transfer Order</h3>
             
             <div className="space-y-4">
               <div>
@@ -1294,7 +1287,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700">Reason for Transfer</label>
+                <label className="block text-sm font-medium text-gray-700">Reason for Transfer *</label>
                 <textarea
                   value={transferReason}
                   onChange={(e) => setTransferReason(e.target.value)}
@@ -1320,7 +1313,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
               <button
                 onClick={handleTransferOrder}
                 disabled={!targetKitchen || !transferReason.trim()}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
               >
                 Transfer Order
               </button>

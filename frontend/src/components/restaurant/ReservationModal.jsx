@@ -2,18 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { restaurantTableApi, restaurantReservationApi } from '../../services/restaurantApi';
 
 const ReservationModal = ({ reservation, onClose, onSave }) => {
-  // Map frontend form fields to backend expected keys
-  const transformReservationPayload = (form) => ({
-    firstName: form.first_name,
-    lastName: form.last_name,
-    email: form.email,
-    phone: form.phone,
-    tableId: form.table_id,
-    reservationDate: form.reservation_date,
-    reservationTime: form.reservation_time,
-    partySize: form.party_size,
-    status: form.status
-  });
   const [form, setForm] = useState({
     first_name: reservation?.first_name || '',
     last_name: reservation?.last_name || '',
@@ -50,16 +38,23 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    // Validate required fields
-    if (!form.table_id || !form.reservation_date || !form.reservation_time || !form.party_size) {
-      setError('Table, Date, Time, and Party Size are required.');
-      return;
-    }
     setSaving(true);
-    const payload = transformReservationPayload(form);
-    console.log('Reservation payload:', payload);
+    setError('');
+    // Validate all required fields
+    const requiredFields = [
+      'first_name', 'last_name', 'phone', 'email', 'table_id', 'reservation_date', 'reservation_time', 'party_size', 'status'
+    ];
+    for (let field of requiredFields) {
+      if (!form[field] || (typeof form[field] === 'string' && form[field].trim() === '')) {
+        setError(`Please fill in all required fields: ${field.replace('_', ' ')}`);
+        setSaving(false);
+        return;
+      }
+    }
     try {
+      // Prepare payload
+      const payload = { ...form };
+      if (form.special_requests) payload.special_requests = form.special_requests;
       if (reservation && reservation.id) {
         await restaurantReservationApi.updateReservation(reservation.id, payload);
       } else {
@@ -74,8 +69,8 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
   };
 
   return (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-20">
-  <div className="bg-white rounded-lg shadow-lg w-full max-w-md sm:max-w-lg p-4 relative overflow-y-auto max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-20">
+    <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-4 relative">
      <button
           className="absolute top-2 right-2 text-gray-200 hover:text-gray-400"
           onClick={onClose}
@@ -199,10 +194,10 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
 
             {error && <div className="text-red-300 text-sm">{error}</div>}
 
-            <div className="flex justify-end space-x-1 mt-2">
+            <div className="flex justify-end space-x-2">
               <button
                 type="button"
-                className="px-2 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300"
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
                 onClick={onClose}
                 disabled={saving}
               >
@@ -210,7 +205,7 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
               </button>
               <button
                 type="submit"
-                className="px-3 py-1 bg-light-orange text-white text-sm font-semibold rounded shadow hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition"
+                className="px-5 py-2 bg-light-orange text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition"
                 disabled={saving}
               >
                 {saving ? 'Saving...' : 'Create'}

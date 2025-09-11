@@ -54,12 +54,12 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
         >
           &times;
         </button>
-        <h2 className="text-lg font-semibold mb-4 text-light-orange outline-4  p-2 rounded">
+        <h2 className="text-lg font-semibold mb-4 bg-light-orange text-white p-2 rounded">
           Edit Category
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Name</label>
+            <label className="block text-sm font-medium text-gray-700">Name *</label>
             <input
               type="text"
               name="name"
@@ -70,7 +70,7 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Description</label>
+            <label className="block text-sm font-medium text-gray-700">Description *</label>
             <textarea
               name="description"
               value={form.description}
@@ -149,8 +149,6 @@ const EditCategoryModal = ({ category, onClose, onSave }) => {
     {saving ? 'Saving...' : 'Save Changes'}
   </button>
 </div>
-
-            
           </div>
         </form>
       </div>
