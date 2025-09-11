@@ -260,7 +260,7 @@ const RestaurantPage = () => {
             <MenuTab
               menu={menu}
               setMenu={setMenu}
-              setMenu={setMenu}
+              
               userRole={user.role}
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
@@ -515,7 +515,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
       console.error('Image upload failed:', err);
       setError(`Upload failed: ${err.message || 'Unknown error'}`);
       // Clear the preview on error
-      setImagePreview("");
+     
     } finally {
       setImageUploading(false);
     }
@@ -571,7 +571,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
         image_url: "",
       });
       setImagePreview("");
-      });
+      
       setImagePreview("");
       setEditingItem(null);
       setShowAddForm(false);
@@ -866,7 +866,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="block text-sm font-medium">Name *</label>
                 <input
                   name='name'
-                  name='name'
+                 
                   type="text"
                   value={newItem.name}
                   onChange={handleInputChange}
@@ -880,7 +880,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="block text-sm font-medium">Description *</label>
                 <textarea
                   name='description'
-                  name='description'
+                 
                   value={newItem.description}
                   onChange={handleInputChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -894,7 +894,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="block text-sm font-medium">Price (₹) *</label>
                 <input
                   name='price'
-                  name='price'
+                 
                   type="number"
                   step="0.01"
                   min="0"
@@ -912,7 +912,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 </label>
                 <input
                   name='preparation_time'
-                  name='preparation_time'
+                
                   type="number"
                   min="0"
                   value={newItem.preparation_time}
@@ -927,7 +927,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                   <input
                     type="checkbox"
                     name="is_vegetarian"
-                    name="is_vegetarian"
+                    
                     checked={newItem.is_vegetarian}
                     onChange={handleInputChange}
                     disabled={loading}
@@ -937,7 +937,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="flex items-center space-x-2">
                   <input
                     name="is_vegan"
-                    name="is_vegan"
+                   
                     type="checkbox"
                     checked={newItem.is_vegan}
                     onChange={handleInputChange}
@@ -1150,6 +1150,15 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
     } catch (err) {
       console.error('Failed to transfer order:', err);
     }
+  };
+  const onPlaceOrder = () => {
+    if (!selectedRestaurant) {
+      alert("Please select a restaurant before placing an order");
+      return;
+    }
+    // TODO: integrate with API
+    console.log(`Placing new order for restaurant ${selectedRestaurant}`);
+    // Example: open a modal or redirect to order form
   };
 
   return (
