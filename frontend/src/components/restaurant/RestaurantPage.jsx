@@ -18,6 +18,41 @@ import KitchenDashboard from './KitchenDashboard';
 
 
 const RestaurantPage = () => {
+  // Custom cancel confirmation modal state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReservationId, setCancelReservationId] = useState(null);
+  const [cancelingId, setCancelingId] = useState(null);
+  const [cancelError, setCancelError] = useState(null);
+
+  // Called by ReservationsTab when cancel is requested
+  const handleCancelRequest = (id) => {
+    setCancelReservationId(id);
+    setShowCancelModal(true);
+  };
+
+  // Called by modal when confirmed
+  const confirmCancel = async () => {
+    setCancelError(null);
+    setCancelingId(cancelReservationId);
+    try {
+      await restaurantReservationApi.cancelReservation(cancelReservationId);
+      const reservationData = await restaurantReservationApi.getReservations();
+      setReservations(reservationData.reservations || []);
+    } catch (err) {
+      setCancelError(err.message || 'Failed to cancel reservation');
+    }
+    setCancelingId(null);
+    setShowCancelModal(false);
+    setCancelReservationId(null);
+  };
+
+  // Called by modal when cancelled
+  const closeCancelModal = () => {
+    setShowCancelModal(false);
+    setCancelReservationId(null);
+  };
+  // Custom cancel confirmation modal state
+  // ...existing code...
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('menu');
   const [loading, setLoading] = useState(false);
@@ -222,16 +257,36 @@ const RestaurantPage = () => {
                   setEditingReservation(reservation);
                   setShowReservationModal(true);
                 }}
-                onCancelReservation={async (id) => {
-                  try {
-                    await restaurantReservationApi.cancelReservation(id);
-                    const reservationData = await restaurantReservationApi.getReservations();
-                    setReservations(reservationData.reservations || []);
-                  } catch (err) {
-                    setError(err.message || 'Failed to cancel reservation');
-                  }
-                }}
+                onCancelRequest={handleCancelRequest}
+                cancelingId={cancelingId}
+                cancelError={cancelError}
               />
+          {showCancelModal && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center bg-black bg-opacity-30">
+              <div className="bg-white rounded-lg shadow-lg mt-16 p-6 w-full max-w-xs text-center">
+                <h3 className="text-lg font-semibold mb-4">Cancel Reservation</h3>
+                <p className="mb-6 text-gray-700">Are you sure you want to cancel this reservation?</p>
+                <div className="flex justify-center space-x-4">
+                  <button
+                    className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                    onClick={closeCancelModal}
+                  >
+                    No
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    onClick={confirmCancel}
+                    disabled={cancelingId === cancelReservationId}
+                  >
+                    {cancelingId === cancelReservationId ? 'Cancelling...' : 'Yes, Cancel'}
+                  </button>
+                </div>
+                {cancelError && (
+                  <div className="mt-4 text-red-600 text-sm">{cancelError}</div>
+                )}
+              </div>
+            </div>
+          )}
               {showReservationModal && (
                 <ReservationModal
                   reservation={editingReservation}
@@ -673,22 +728,7 @@ const MenuTab = ({ menu, userRole, onEditCategory, selectedRestaurant, restauran
 
 
 // Reservations Tab Component
-const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelReservation }) => {
-  const [cancelingId, setCancelingId] = React.useState(null);
-  const [cancelError, setCancelError] = React.useState(null);
-
-  const handleCancel  = async (id) => {
-    setCancelError(null);
-    setCancelingId(id);
-    if (window.confirm('Are you sure you want to cancel this reservation?')) {
-      try {
-        await onCancelReservation(id);
-      } catch (err) {
-        setCancelError(err.message || 'Failed to cancel reservation');
-      }
-    }
-    setCancelingId(null);
-  };
+const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelRequest, cancelingId, cancelError }) => {
 
   return (
     <div className="space-y-6">
@@ -775,7 +815,7 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
                     </button>
                     <button
                       className="text-yellow-600 hover:text-white bg-yellow-100 hover:bg-yellow-600 border border-yellow-200 rounded px-2 py-1 transition-colors duration-150"
-                      onClick={() => handleCancel(reservation.id)}
+                      onClick={() => onCancelRequest(reservation.id)}
                       disabled={cancelingId === reservation.id}
                     >
                       {cancelingId === reservation.id ? 'Cancelling...' : 'Cancel'}
@@ -836,7 +876,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
   };
 
   return (
-    <div className="space-y-6">
+  <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">Orders</h3>
         {selectedRestaurant && (
