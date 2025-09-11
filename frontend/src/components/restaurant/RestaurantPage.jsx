@@ -16,7 +16,6 @@ import {
 } from '../../services/restaurantApi';
 import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-import AddTableForm from './AddTableForm';
 import RestaurantSelector from './RestaurantSelector';
 import KitchenDashboard from './KitchenDashboard';
 
@@ -261,6 +260,7 @@ const RestaurantPage = () => {
             <MenuTab
               menu={menu}
               setMenu={setMenu}
+              
               userRole={user.role}
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
@@ -268,7 +268,6 @@ const RestaurantPage = () => {
                 setSelectedCategory(category);
                 setShowEditCategoryModal(true);
               }}
-              onAddCategory={() => setShowAddCategoryModal(true)}
             />
           )}
 
@@ -370,7 +369,7 @@ const RestaurantPage = () => {
         </div>
       )}
 
-{showEditCategoryModal && selectedCategory && (
+      {showEditCategoryModal && selectedCategory && (
         <EditCategoryModal
           category={selectedCategory}
           onClose={() => setShowEditCategoryModal(false)}
@@ -430,7 +429,7 @@ const RestaurantPage = () => {
   );
 };
 
-const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory,onAddCategory, selectedRestaurant, restaurants}) => {
+const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRestaurant, restaurants }) => {
   const [selectedType, setSelectedType] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -516,7 +515,7 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory,onAddCategor
       console.error('Image upload failed:', err);
       setError(`Upload failed: ${err.message || 'Unknown error'}`);
       // Clear the preview on error
-      setImagePreview("");
+     
     } finally {
       setImageUploading(false);
     }
@@ -572,6 +571,8 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory,onAddCategor
         image_url: "",
       });
       setImagePreview("");
+      
+      setImagePreview("");
       setEditingItem(null);
       setShowAddForm(false);
       
@@ -585,6 +586,7 @@ const MenuTab = ({ menu, setMenu, userRole ,onClose, onEditCategory,onAddCategor
       setLoading(false);
     }
   };
+
 
   const handleEditClick = (item) => {
     setEditingItem(item);
@@ -703,20 +705,12 @@ const handleClose = () => {
           </select>
         </div>
         {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
-          <div className="flex space-x-3">
-            <button
-              onClick={onAddCategory}
-              className="bg-light-orange-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-            >
-              Add Category
-            </button>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
-            >
-              Add Menu Item
-            </button>
-          </div>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          >
+            Add Menu Item
+          </button>
         )}
       </div>
 
@@ -769,8 +763,7 @@ const handleClose = () => {
               )}
             </div>
 
-            {/* Menu Items */}
-
+            {/* Menu Items Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {category.items?.map((item) => (
                 <div
@@ -779,44 +772,44 @@ const handleClose = () => {
                 >
                   <div className="flex items-start justify-between">
                     {item.image_url && (
-                    <img
-                      src={item.image_url}
-                     alt={item.name}
-                      className="w-40 h-40 object-cover rounded-md mr-4"
-                      onError={(e) => {
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="w-40 h-40 object-cover rounded-md mr-4"
+                        onError={(e) => {
                           // Handle broken image
                           e.target.style.display = 'none';
                         }}
-                     />
-                      )}
-                      <div className="flex justify-between items-start">
-                    <div className='flex-1'>
-                      <h4 className="font-semibold text-lg text-gray-900">{item.name}</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {item.description}
-                      </p>
-                      <div className="mt-3 flex items-center space-x-2">
-                         <span
-    className={`text-lg font-semibold ${
-      item.is_vegetarian || item.is_vegan
-        ? "text-green-600"
-        : "text-red-600"
-    }`}
-  >
-    ₹{item.price}
-  </span>
-                        {item.is_vegetarian && (
-                          <span className="text-green-500">🌱</span>
-                        )}
-                        {item.is_vegan && <span className="text-green-600">🌿</span>}
-                        {!item.is_vegan && !item.is_vegetarian && <span className="text-lg font-semibold text-red-600"> 🍗</span>}
-                      </div>
-                      {item.preparation_time && (
-                        <p className="text-xs text-gray-500 mt-2">
-                          Prep time: {item.preparation_time} mins
+                      />
+                    )}
+                    <div className="flex justify-between items-start">
+                      <div className='flex-1'>
+                        <h4 className="font-semibold text-lg text-gray-900">{item.name}</h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {item.description}
                         </p>
-                      )}
-                    </div>
+                        <div className="mt-3 flex items-center space-x-2">
+                          <span
+                            className={`text-lg font-semibold ${
+                              item.is_vegetarian || item.is_vegan
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            ₹{item.price}
+                          </span>
+                          {item.is_vegetarian && (
+                            <span className="text-green-500">🌱</span>
+                          )}
+                          {item.is_vegan && <span className="text-green-600">🌿</span>}
+                          {!item.is_vegan && !item.is_vegetarian && <span className="text-lg font-semibold text-red-600"> 🍗</span>}
+                        </div>
+                        {item.preparation_time && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Prep time: {item.preparation_time} mins
+                          </p>
+                        )}
+                      </div>
                     </div>
                     {["admin", "manager"].includes(userRole) && (
                       <MenuItemActions 
@@ -875,13 +868,13 @@ const handleClose = () => {
             )}
 
             <form onSubmit={handleAddItem} className="space-y-4">
-             <div>
-    <label className="block text-sm font-medium">Category</label>
-    <select
-      name="category_id"
-      value={newItem.category_id}
-      onChange={handleInputChange}
-      className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              <div>
+                <label className="block text-sm font-medium">Category *</label>
+                <select
+                  name="category_id"
+                  value={newItem.category_id}
+                  onChange={handleInputChange}
+                  className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                   disabled={loading}
     >
@@ -897,6 +890,7 @@ const handleClose = () => {
                 <label className="block text-sm font-medium">Name *</label>
                 <input
                   name='name'
+                 
                   type="text"
                   value={newItem.name}
                   onChange={handleInputChange}
@@ -910,6 +904,7 @@ const handleClose = () => {
                 <label className="block text-sm font-medium">Description *</label>
                 <textarea
                   name='description'
+                 
                   value={newItem.description}
                   onChange={handleInputChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -923,6 +918,7 @@ const handleClose = () => {
                 <label className="block text-sm font-medium">Price (₹) *</label>
                 <input
                   name='price'
+                 
                   type="number"
                   step="0.01"
                   min="0"
@@ -940,6 +936,7 @@ const handleClose = () => {
                 </label>
                 <input
                   name='preparation_time'
+                
                   type="number"
                   min="0"
                   value={newItem.preparation_time}
@@ -954,14 +951,17 @@ const handleClose = () => {
                   <input
                     type="checkbox"
                     name="is_vegetarian"
+                    
                     checked={newItem.is_vegetarian}
-                    onChange={handleInputChange }
+                    onChange={handleInputChange}
+                    disabled={loading}
                   />
                   <span>Vegetarian</span>
                 </label>
                 <label className="flex items-center space-x-2">
                   <input
                     name="is_vegan"
+                   
                     type="checkbox"
                     checked={newItem.is_vegan}
                     onChange={handleInputChange}
@@ -972,41 +972,14 @@ const handleClose = () => {
               </div>
 
               <div>
-  <label className="block text-sm font-medium">Upload Image</label>
-  <input
-    type="file"
-    accept="image/*"
-    onChange={async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-
-      // Local preview
-      const localUrl = URL.createObjectURL(file);
-      setImagePreview(localUrl);
-
-      // Read as base64 and upload
-      setImageUploading(true);
-      try {
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(f);
-        });
-        const base64 = await toBase64(file);
-        const res = await uploadApi.uploadImage(base64);
-        if (res?.success && res?.url) {
-          setNewItem((prev) => ({ ...prev, image_url: res.url }));
-        }
-      } catch (err) {
-        console.error('Image upload failed:', err);
-      } finally {
-        setImageUploading(false);
-      }
-    }}
-    className="w-full border rounded-md px-3 py-2"
-    disabled={loading || imageUploading}
-  />
+                <label className="block text-sm font-medium">Upload Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="w-full border rounded-md px-3 py-2"
+                  disabled={loading || imageUploading}
+                />
 
   {/* Preview Image */}
   {(imagePreview || newItem.image_url) && (
@@ -1040,8 +1013,7 @@ const handleClose = () => {
                 </button>
                 <button
                   type="submit"
-
-                  className="px-4 py-2 text-sm font-medium text-white bg-light-orange rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium text-white bg-light-orange rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={loading || imageUploading}
                 >
                   {loading ? (editingItem ? "Updating..." : "Saving...") : 
@@ -1176,12 +1148,14 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
 };
 
 // Orders Tab Component
-const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants, onPlaceOrder }) => {
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [transferReason, setTransferReason] = useState('');
-  const [targetKitchen, setTargetKitchen] = useState('');
-  const [kitchens, setKitchens] = useState([]);
+const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
+  const [cancelingId, setCancelingId] = React.useState(null);
+  const [cancelError, setCancelError] = React.useState(null);
+  const [transferReason, setTransferReason] = React.useState('');
+  const [targetKitchen, setTargetKitchen] = React.useState('');
+  const [kitchens, setKitchens] = React.useState([]);
+  const [showTransferModal, setShowTransferModal] = React.useState(false);
+  const [selectedOrder, setSelectedOrder] = React.useState(null);
 
   useEffect(() => {
     // Load available kitchens for transfer functionality
@@ -1215,6 +1189,15 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants, onPlaceO
     } catch (err) {
       console.error('Failed to transfer order:', err);
     }
+  };
+  const onPlaceOrder = () => {
+    if (!selectedRestaurant) {
+      alert("Please select a restaurant before placing an order");
+      return;
+    }
+    // TODO: integrate with API
+    console.log(`Placing new order for restaurant ${selectedRestaurant}`);
+    // Example: open a modal or redirect to order form
   };
 
   return (
@@ -1440,9 +1423,7 @@ const TableActions = ({ table, onEdit, onDelete }) => {
 };
 
 // Tables Tab Component
-const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTable, onEditTable, onDeleteTable }) => {
-  const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
-  const [showAddTable, setShowAddTable] = useState(false);
+const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tableList, setTableList] = useState(tables || []);
       useEffect(() => {
@@ -1471,6 +1452,8 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
     console.log("Table deleted:", tableId);
     setTableList((prev) => prev.filter((t) => t.id !== tableId));
   };
+
+  return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">
@@ -1478,7 +1461,7 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
         </h3>
         {["admin", "manager"].includes(userRole) && selectedRestaurant && (
           <button
-            onClick={onAddTable}
+            onClick={() => setIsModalOpen(true)}
             className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
           >
             Add Table
@@ -1513,7 +1496,6 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
         </div>
       )}
 
-      {/* Tables Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tableList.map((tableItem) => (
           <div key={tableItem.id} className="bg-white rounded-lg shadow p-6">
@@ -1521,8 +1503,12 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
               <h4 className="text-lg font-semibold text-gray-900">
                 Table {tableItem.table_number}
               </h4>
-              {['admin', 'manager'].includes(userRole) && (
-                <TableActions table={table} onEdit={onEditTable} onDelete={onDeleteTable} />
+              {["admin", "manager"].includes(userRole) && (
+                <EditTableModal
+                  item={tableItem}
+                  onEdit={handleTableEdited}
+                  onDelete={handleTableDeleted}
+                />
               )}
             </div>
 
@@ -1572,6 +1558,6 @@ const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants, onAddTab
         restaurantId={selectedRestaurant}
       />
     </div>
-    )
-  )}; 
+    );
+  }; 
 export default RestaurantPage;
