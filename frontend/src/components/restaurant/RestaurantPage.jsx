@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import MenuItemActions from './MenuItemActions';
 import EditCategoryModal from './EditCategoryModal';
+import AddCategoryModal from './AddCategoryModal';
 import ReservationModal from './ReservationModal';
+import PlaceOrderModal from './PlaceOrderModal';
 import { useAuth } from '../../contexts/AuthContext';
 import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
@@ -16,7 +18,6 @@ import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 import RestaurantSelector from './RestaurantSelector';
 import KitchenDashboard from './KitchenDashboard';
-
 
 const RestaurantPage = () => {
   // Custom cancel confirmation modal state
@@ -69,12 +70,14 @@ const RestaurantPage = () => {
 
   // Form states
   const [showAddTableModal, setShowAddTableModal] = useState(false);
+  const [editingTable, setEditingTable] = useState(null);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
   const [editingReservation, setEditingReservation] = useState(null);
- //  Hooks must be inside the component
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [showPlaceOrderModal, setShowPlaceOrderModal] = useState(false);
 
   // Load restaurants on component mount
   useEffect(() => {
@@ -117,6 +120,8 @@ const RestaurantPage = () => {
           case 'kitchen':
             // Kitchen data is loaded within KitchenDashboard component
             break;
+          default:
+            break;
         }
       } catch (err) {
         setError(err.message || 'Failed to load data');
@@ -129,8 +134,36 @@ const RestaurantPage = () => {
     }
   }, [activeTab, user.role, selectedRestaurant]);
 
-  const handleTableAdded = (newTable) => {
-    setTables((prevTables) => [...prevTables, newTable]);
+  const handleTableSaved = async () => {
+    // Refresh tables data after add/update
+    try {
+      const tableData = await restaurantTableApi.getTables(selectedRestaurant);
+      setTables(tableData.tables || []);
+    } catch (err) {
+      setError(err.message || 'Failed to refresh tables');
+    }
+  };
+
+  const handleDeleteTable = async (tableId) => {
+    if (!window.confirm('Are you sure you want to delete this table?')) return;
+    
+    try {
+      await restaurantTableApi.deleteTable(tableId);
+      const tableData = await restaurantTableApi.getTables(selectedRestaurant);
+      setTables(tableData.tables || []);
+    } catch (err) {
+      setError(err.message || 'Failed to delete table');
+    }
+  };
+
+  const handleOrderPlaced = async () => {
+    // Refresh orders data after placing new order
+    try {
+      const orderData = await restaurantOrderApi.getOrders();
+      setOrders(orderData.orders || []);
+    } catch (err) {
+      setError(err.message || 'Failed to refresh orders');
+    }
   };
 
   const tabs = [
@@ -147,7 +180,7 @@ const RestaurantPage = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl  font-hightower font-bold text-gray-900">Restaurant Management</h1>
+            <h1 className="text-3xl font-hightower font-bold text-gray-900">Restaurant Management</h1>
             <p className="mt-2 text-gray-600">
               Manage restaurant operations, bookings, and orders
             </p>
@@ -224,19 +257,18 @@ const RestaurantPage = () => {
         <div className="min-h-96">
           {/* Menu Tab */}
           {activeTab === 'menu' && (
-
             <MenuTab
               menu={menu}
               setMenu={setMenu}
+              setMenu={setMenu}
               userRole={user.role}
-                selectedRestaurant={selectedRestaurant}
+              selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
               onEditCategory={(category) => {
                 setSelectedCategory(category);
                 setShowEditCategoryModal(true);
               }}
             />
-
           )}
 
           {/* Reservations Tab */}
@@ -309,6 +341,7 @@ const RestaurantPage = () => {
               userRole={user.role}
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
+              onPlaceOrder={() => setShowPlaceOrderModal(true)}
             />
           )}
 
@@ -319,7 +352,15 @@ const RestaurantPage = () => {
               userRole={user.role}
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
-              onAddTable={() => setShowAddTableModal(true)}
+              onAddTable={() => {
+                setEditingTable(null);
+                setShowAddTableModal(true);
+              }}
+              onEditTable={(table) => {
+                setEditingTable(table);
+                setShowAddTableModal(true);
+              }}
+              onDeleteTable={handleDeleteTable}
             />
           )}
 
@@ -327,7 +368,6 @@ const RestaurantPage = () => {
           {activeTab === 'kitchen' && <KitchenDashboard />}
         </div>
       )}
-       {/* 🔹 Edit Category Modal */}
 
       {showEditCategoryModal && selectedCategory && (
         <EditCategoryModal
@@ -346,22 +386,46 @@ const RestaurantPage = () => {
         />
       )}
 
-       {/*  Reservation Modal */}
-          {showReservationModal && (
-        <ReservationModal
-        onClose={() => setShowReservationModal(false)}
-       onSave={async () => {
-       try {
-        const reservationData = await restaurantReservationApi.getReservations();
-         setReservations(reservationData.reservations || []);
-      } catch (err) {
-        setError(err.message || 'Failed to reload reservations');
-      }
-    }}
-  />
-)}
+      {/* Place Order Modal */}
+      {showPlaceOrderModal && (
+        <PlaceOrderModal
+          selectedRestaurant={selectedRestaurant}
+          restaurants={restaurants}
+          userRole={user.role}
+          onClose={() => setShowPlaceOrderModal(false)}
+          onSave={handleOrderPlaced}
+        />
+      )}
 
-</div>
+      {/* Add Category Modal */}
+      {showAddCategoryModal && (
+        <AddCategoryModal
+          selectedRestaurant={selectedRestaurant}
+          onClose={() => setShowAddCategoryModal(false)}
+          onSave={async () => {
+            try {
+              const updatedMenu = await restaurantMenuApi.getMenu();
+              setMenu(updatedMenu);
+            } catch (err) {
+              setError(err.message || "Failed to refresh menu");
+            }
+          }}
+        />
+      )}
+
+      {/* Add/Edit Table Modal */}
+      {showAddTableModal && (
+        <AddTableForm
+          table={editingTable}
+          selectedRestaurant={selectedRestaurant}
+          onClose={() => {
+            setShowAddTableModal(false);
+            setEditingTable(null);
+          }}
+          onSave={handleTableSaved}
+        />
+      )}
+    </div>
   );
 };
 
@@ -375,12 +439,14 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
   const [error, setError] = useState(""); // Added error state
   const [newItem, setNewItem] = useState({
     category_id: "",
+    category_id: "",
     name: "",
     description: "",
     price: "",
     preparation_time: "",
     is_vegetarian: false,
     is_vegan: false,
+    image_url: "",
     image_url: "",
   });
 
@@ -505,6 +571,8 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
         image_url: "",
       });
       setImagePreview("");
+      });
+      setImagePreview("");
       setEditingItem(null);
       setShowAddForm(false);
       
@@ -518,6 +586,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
       setLoading(false);
     }
   };
+
 
   const handleEditClick = (item) => {
     setEditingItem(item);
@@ -797,6 +866,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="block text-sm font-medium">Name *</label>
                 <input
                   name='name'
+                  name='name'
                   type="text"
                   value={newItem.name}
                   onChange={handleInputChange}
@@ -810,6 +880,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="block text-sm font-medium">Description *</label>
                 <textarea
                   name='description'
+                  name='description'
                   value={newItem.description}
                   onChange={handleInputChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -822,6 +893,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
               <div>
                 <label className="block text-sm font-medium">Price (₹) *</label>
                 <input
+                  name='price'
                   name='price'
                   type="number"
                   step="0.01"
@@ -840,6 +912,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 </label>
                 <input
                   name='preparation_time'
+                  name='preparation_time'
                   type="number"
                   min="0"
                   value={newItem.preparation_time}
@@ -854,6 +927,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                   <input
                     type="checkbox"
                     name="is_vegetarian"
+                    name="is_vegetarian"
                     checked={newItem.is_vegetarian}
                     onChange={handleInputChange}
                     disabled={loading}
@@ -862,6 +936,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 </label>
                 <label className="flex items-center space-x-2">
                   <input
+                    name="is_vegan"
                     name="is_vegan"
                     type="checkbox"
                     checked={newItem.is_vegan}
@@ -912,7 +987,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 >
                   Cancel
                 </button>
-
                 <button
                   type="submit"
                   className="px-4 py-2 text-sm font-medium text-white bg-light-orange rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -929,9 +1003,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
     </div>
   );
 };
-
-
-
 
 // Reservations Tab Component
 const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelRequest, cancelingId, cancelError }) => {
@@ -1035,7 +1106,7 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
       </div>
     </div>
   );
-}
+};
 
 // Orders Tab Component
 const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
@@ -1085,11 +1156,21 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
   <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">Orders</h3>
-        {selectedRestaurant && (
-          <div className="text-sm text-gray-600">
-            Showing orders for: {restaurants.find(r => r.id === selectedRestaurant)?.name || 'All restaurants'}
-          </div>
-        )}
+        <div className="flex items-center space-x-4">
+          {selectedRestaurant && (
+            <div className="text-sm text-gray-600">
+              Showing orders for: {restaurants.find(r => r.id === selectedRestaurant)?.name || 'All restaurants'}
+            </div>
+          )}
+          {['admin', 'manager', 'waiter'].includes(userRole) && selectedRestaurant && (
+            <button
+              onClick={onPlaceOrder}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              Place Order
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Orders List */}
@@ -1116,92 +1197,46 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
                   </span>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mb-4">
+                <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                   <div>
-                    <span className="font-medium">Customer:</span> {order.first_name} {order.last_name}
+                    <span className="font-medium">Table:</span> {order.table_number || 'Room Service'}
                   </div>
                   <div>
-                    <span className="font-medium">Table:</span> {order.table_number} ({order.table_location})
+                    <span className="font-medium">Total:</span> ₹{order.total_amount}
                   </div>
                   <div>
-                    <span className="font-medium">Total:</span> ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}
+                    <span className="font-medium">Created:</span> {new Date(order.created_at).toLocaleString()}
+                  </div>
+                  <div>
+                    <span className="font-medium">Staff:</span> {order.staff_name}
                   </div>
                 </div>
 
-                {/* Kitchen Status */}
-                {order.kitchen_name && (
-                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-gray-700">Kitchen:</span>
-                        <span className="text-sm text-gray-900">{order.kitchen_name}</span>
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          order.kitchen_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          order.kitchen_status === 'accepted' ? 'bg-blue-100 text-blue-800' :
-                          order.kitchen_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {order.kitchen_status}
-                        </span>
-                      </div>
-                      {['waiter', 'manager', 'admin'].includes(userRole) && order.kitchen_status === 'pending' && (
-                        <button
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setShowTransferModal(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-700 text-xs font-medium"
-                        >
-                          Transfer Kitchen
-                        </button>
-                      )}
-                    </div>
-                    {order.kitchen_notes && (
-                      <div className="mt-2 text-sm text-gray-600">
-                        <span className="font-medium">Kitchen Notes:</span> {order.kitchen_notes}
-                      </div>
-                    )}
-                    {order.estimated_preparation_time && (
-                      <div className="mt-1 text-sm text-gray-600">
-                        <span className="font-medium">Estimated Time:</span> {order.estimated_preparation_time} minutes
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Order Items */}
-                <div className="border-t border-gray-200 pt-4">
+                <div className="mt-4">
                   <h5 className="font-medium text-gray-900 mb-2">Items:</h5>
-                  <div className="space-y-2">
-                    {order.items?.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded">
-                        <div className="flex-1">
-                          <span className="font-medium">{item.quantity}x {item.item_name}</span>
-                          {item.special_instructions && (
-                            <p className="text-xs text-gray-600">Note: {item.special_instructions}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm">₹{parseFloat(item.total_price).toFixed(2)}</span>
-                          <span className={`inline-flex px-2 py-1 text-xs rounded ${
-                            item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            item.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                            'bg-green-100 text-green-800'
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
+                  <div className="space-y-1">
+                    {order.items?.map((item, index) => (
+                      <div key={index} className="flex justify-between text-sm">
+                        <span>{item.quantity}x {item.name}</span>
+                        <span>₹{item.price * item.quantity}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* Order Actions */}
-              {['chef', 'bartender', 'waiter', 'manager', 'admin'].includes(userRole) && (
-                <div className="ml-4">
-                  <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                    Update Status
+              {/* Actions */}
+              {['waiter', 'manager', 'admin'].includes(userRole) && (
+                <div className="flex flex-col space-y-2">
+                  <button
+                    onClick={() => {
+                      setSelectedOrder(order);
+                      setShowTransferModal(true);
+                    }}
+                    className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    Transfer
                   </button>
                 </div>
               )}
@@ -1210,53 +1245,57 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
         ))}
       </div>
 
-      {orders.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 text-lg">🍽️</div>
-          <p className="text-gray-600 mt-2">No orders found</p>
+      {!selectedRestaurant && (
+        <div className="text-center py-12 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="text-yellow-600 text-lg">🏨</div>
+          <p className="text-yellow-800 mt-2 font-medium">Please select a restaurant to view and place orders</p>
+          <p className="text-yellow-700 text-sm mt-1">Use the restaurant selector above to choose a specific restaurant.</p>
         </div>
       )}
 
-      {/* Transfer Order Modal */}
-      {showTransferModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Transfer Order #{selectedOrder.order_number}
-            </h3>
+      {selectedRestaurant && orders.length === 0 && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg">🍽️</div>
+          <p className="text-gray-600 mt-2">No orders found</p>
+          <p className="text-gray-500 text-sm mt-1">Place your first order using the button above.</p>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Transfer Order</h3>
+            
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Target Kitchen *
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Transfer to Kitchen</label>
                 <select
                   value={targetKitchen}
                   onChange={(e) => setTargetKitchen(e.target.value)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  required
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                 >
                   <option value="">Select Kitchen</option>
-                  {kitchens.filter(k => k.id !== selectedOrder.target_kitchen_id).map((kitchen) => (
+                  {kitchens.map((kitchen) => (
                     <option key={kitchen.id} value={kitchen.id}>
-                      {kitchen.kitchen_name} ({kitchen.restaurant_type})
+                      {kitchen.name}
                     </option>
                   ))}
                 </select>
               </div>
+              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reason for transfer *
-                </label>
+                <label className="block text-sm font-medium text-gray-700">Reason for Transfer</label>
                 <textarea
                   value={transferReason}
                   onChange={(e) => setTransferReason(e.target.value)}
-                  rows="3"
-                  required
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Why are you transferring this order?"
+                  rows={3}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="Explain why this order is being transferred..."
                 />
               </div>
             </div>
+            
             <div className="mt-6 flex space-x-3">
               <button
                 onClick={() => {
@@ -1278,6 +1317,47 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Table Actions Component
+const TableActions = ({ table, onEdit, onDelete }) => {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative inline-block text-left">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-gray-400 hover:text-gray-600 focus:outline-none"
+      >
+        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
+          <button
+            onClick={() => {
+              onEdit(table);
+              setOpen(false);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-100 hover:text-blue-800 rounded-t-md"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => {
+              onDelete(table.id);
+              setOpen(false);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-100 hover:text-red-800 rounded-b-md"
+          >
+            Delete
+          </button>
         </div>
       )}
     </div>

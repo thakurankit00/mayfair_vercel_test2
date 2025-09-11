@@ -1,12 +1,14 @@
 require('dotenv').config();
 const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
-const uploadRoutes = require('./routes/upload');
-
+const SocketHandler = require('./sockets/socketHandler');
+const { setupSwagger } = require('./config/swagger');
 
 // Import database connection
 const db = require('./config/database');
@@ -24,7 +26,25 @@ const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 
 const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+
 const PORT = process.env.PORT || 3000;
+
+// Initialize Socket.io handler
+const socketHandler = new SocketHandler(io);
+
+// Make socket handler available to routes
+app.set('socketHandler', socketHandler);
+
+// Setup Swagger documentation
+setupSwagger(app);
 
 // Trust proxy for rate limiting and security
 // This is needed when behind a reverse proxy (nginx, load balancer, etc.)
@@ -94,7 +114,6 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/restaurant', restaurantRoutes);
-app.use("/api/v1/upload", uploadRoutes);
 
 // 404 handler
 app.use(notFound);
@@ -103,8 +122,9 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
 });

@@ -225,6 +225,25 @@ const createOrder = async (req, res) => {
       
       await trx.commit();
       
+      // Emit Socket.io event for new order
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        socketHandler.emitNewOrder({
+          orderId,
+          orderNumber,
+          tableId: table_id,
+          tableNumber: table.table_name,
+          kitchenTypes: [order_type],
+          waiterId: userRole === 'waiter' ? userId : null,
+          customerInfo: {
+            name: `${req.user.first_name} ${req.user.last_name}`,
+            userId
+          },
+          restaurantId: finalRestaurantId,
+          targetKitchenId: finalTargetKitchenId
+        });
+      }
+      
       // Get complete order details
       const orderDetails = await getOrderDetails(orderId);
       
@@ -969,6 +988,22 @@ const acceptKitchenOrder = async (req, res) => {
       
       await trx.commit();
       
+      // Emit Socket.io event for order acceptance
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        const kitchenDetails = await Restaurant.query().findById(kitchenId);
+        socketHandler.emitKitchenOrderAction({
+          orderId,
+          orderNumber: order.order_number,
+          action: 'accepted',
+          kitchenName: kitchenDetails?.name || 'Kitchen',
+          estimatedTime: estimated_time,
+          notes: notes,
+          chefId: userId,
+          waiterId: order.waiter_id
+        });
+      }
+      
       // Get updated order details
       const updatedOrder = await getOrderDetails(orderId);
       
@@ -1088,6 +1123,21 @@ const rejectKitchenOrder = async (req, res) => {
       });
       
       await trx.commit();
+      
+      // Emit Socket.io event for order rejection
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        const kitchenDetails = await Restaurant.query().findById(kitchenId);
+        socketHandler.emitKitchenOrderAction({
+          orderId,
+          orderNumber: order.order_number,
+          action: 'rejected',
+          kitchenName: kitchenDetails?.name || 'Kitchen',
+          reason: reason,
+          chefId: userId,
+          waiterId: order.waiter_id
+        });
+      }
       
       // Get updated order details
       const updatedOrder = await getOrderDetails(orderId);
@@ -1326,6 +1376,121 @@ const getOrderKitchenLogs = async (req, res) => {
   }
 };
 
+/**
+ * Generate bill for order
+ * POST /api/v1/restaurant/orders/:orderId/bill
+ */
+const generateBill = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get order details
+    const orderDetails = await getOrderDetails(orderId);
+    
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+    
+    // Check permissions
+    if (userRole === 'customer' && orderDetails.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only generate bills for your own orders'
+        }
+      });
+    }
+    
+    if (userRole === 'waiter' && orderDetails.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only generate bills for orders assigned to you'
+        }
+      });
+    }
+    
+    // Calculate bill details
+    const billData = {
+      orderId,
+      orderNumber: orderDetails.order_number,
+      customer: {
+        name: `${orderDetails.first_name} ${orderDetails.last_name}`,
+        phone: orderDetails.phone
+      },
+      table: {
+        number: orderDetails.table_number,
+        location: orderDetails.table_location
+      },
+      items: orderDetails.items.map(item => ({
+        name: item.item_name,
+        quantity: item.quantity,
+        unitPrice: parseFloat(item.unit_price),
+        totalPrice: parseFloat(item.total_price)
+      })),
+      summary: {
+        subtotal: parseFloat(orderDetails.total_amount),
+        tax: parseFloat(orderDetails.tax_amount || 0),
+        total: parseFloat(orderDetails.total_amount) + parseFloat(orderDetails.tax_amount || 0)
+      },
+      generatedAt: new Date(),
+      generatedBy: {
+        id: userId,
+        name: `${req.user.first_name} ${req.user.last_name}`,
+        role: userRole
+      }
+    };
+    
+    // Update order status to indicate bill generated
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        status: 'billed',
+        billed_at: new Date(),
+        updated_at: new Date()
+      });
+    
+    // Emit Socket.io event for bill generation
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderStatusUpdate({
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'billed',
+        userId,
+        userRole,
+        waiterId: orderDetails.waiter_id
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      data: { bill: billData },
+      message: 'Bill generated successfully'
+    });
+    
+  } catch (error) {
+    console.error('Generate bill error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to generate bill'
+      }
+    });
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
@@ -1333,6 +1498,7 @@ module.exports = {
   updateOrderStatus,
   updateOrderItemStatus,
   addOrderItems,
+  generateBill,
   // Kitchen management
   getKitchenOrders,
   acceptKitchenOrder,
