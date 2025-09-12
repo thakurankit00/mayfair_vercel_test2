@@ -182,9 +182,18 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                             <h5 className="font-medium text-gray-900">{item.name}</h5>
                             <p className="text-sm text-gray-600">{item.description}</p>
                             <div className="flex items-center space-x-2 mt-1">
-                              <span className="font-semibold text-green-600">₹{item.price}</span>
+                              <span
+                            className={`text-lg font-semibold ${
+                              item.is_vegetarian || item.is_vegan
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            ₹{item.price}
+                          </span>
                               {item.is_vegetarian && <span className="text-green-500">🌱</span>}
                               {item.is_vegan && <span className="text-green-600">🌿</span>}
+                             {!item.is_vegan && !item.is_vegetarian && <span className="text-lg font-semibold text-red-600"> 🍗</span>}
                             </div>
                             {item.preparation_time && (
                               <span className="text-xs text-gray-500">
