@@ -8,11 +8,11 @@ class RoomBooking extends BaseModel {
   static get jsonSchema() {
     return {
       type: 'object',
-      required: ['room_id', 'customer_id', 'check_in_date', 'check_out_date', 'adults', 'total_amount'],
+      required: ['room_id', 'user_id', 'check_in_date', 'check_out_date', 'adults', 'total_amount'],
       properties: {
         ...super.jsonSchema.properties,
         room_id: { type: 'string', format: 'uuid' },
-        customer_id: { type: 'string', format: 'uuid' },
+        user_id: { type: 'string', format: 'uuid' },
         check_in_date: { type: 'string', format: 'date' },
         check_out_date: { type: 'string', format: 'date' },
         adults: { type: 'integer', minimum: 1, maximum: 10 },
@@ -20,7 +20,7 @@ class RoomBooking extends BaseModel {
         total_amount: { type: 'number', minimum: 0 },
         status: { 
           type: 'string', 
-          enum: ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled', 'no_show'],
+          enum: ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'],
           default: 'pending'
         },
         platform_booking_id: { type: ['string', 'null'] },
@@ -46,12 +46,12 @@ class RoomBooking extends BaseModel {
         }
       },
 
-      // A booking belongs to a customer
+      // A booking belongs to a user (customer)
       customer: {
         relation: BaseModel.BelongsToOneRelation,
         modelClass: require('./User'),
         join: {
-          from: 'room_bookings.customer_id',
+          from: 'room_bookings.user_id',
           to: 'users.id'
         }
       }
@@ -89,7 +89,7 @@ class RoomBooking extends BaseModel {
   // Static methods
   static async getActiveBookings() {
     return await this.query()
-      .whereNotIn('status', ['cancelled', 'no_show'])
+      .whereNotIn('status', ['cancelled'])
       .modify('active')
       .orderBy('check_in_date', 'asc');
   }
@@ -105,7 +105,7 @@ class RoomBooking extends BaseModel {
   static async hasConflictingBookings(roomId, checkInDate, checkOutDate, excludeBookingId = null) {
     let query = this.query()
       .where('room_id', roomId)
-      .whereNotIn('status', ['cancelled', 'no_show'])
+      .whereNotIn('status', ['cancelled'])
       .andWhere(function() {
         this.where(function() {
           this.where('check_in_date', '<=', checkInDate)

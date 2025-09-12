@@ -1,5 +1,8 @@
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const Restaurant = require('../models/Restaurant');
+const Order = require('../models/Order');
+const OrderKitchenLog = require('../models/OrderKitchenLog');
 
 /**
  * Order Management Controller
@@ -14,8 +17,10 @@ const createOrder = async (req, res) => {
     const {
       table_id,
       table_reservation_id,
-      order_type, // 'restaurant', 'bar', 'room_service'
+      order_type, // 'restaurant', 'bar', 'room_service','dine_in','takeway'
       room_booking_id, // for room service
+      restaurant_id, // which restaurant the order is for
+      target_kitchen_id, // which kitchen should prepare the order
       items, // array of { menu_item_id, quantity, special_instructions }
       special_instructions
     } = req.body;
@@ -34,7 +39,21 @@ const createOrder = async (req, res) => {
       });
     }
     
-    if (!['restaurant', 'bar', 'room_service'].includes(order_type)) {
+    // Validate restaurant if provided
+    if (restaurant_id) {
+      const restaurant = await Restaurant.query().findById(restaurant_id);
+      if (!restaurant || !restaurant.is_active) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'RESTAURANT_NOT_FOUND',
+            message: 'Restaurant not found or not active'
+          }
+        });
+      }
+    }
+    
+    if (!['restaurant', 'bar', 'room_service','dine_in','takeway'].includes(order_type)) {
       return res.status(400).json({
         success: false,
         error: {
@@ -44,10 +63,13 @@ const createOrder = async (req, res) => {
       });
     }
     
-    // Verify table exists
+    // Verify table exists and get restaurant info
     const table = await db('restaurant_tables')
-      .where('id', table_id)
-      .where('is_active', true)
+      .select('restaurant_tables.*', 'restaurants.name as restaurant_name', 'restaurants.restaurant_type')
+      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+      .where('restaurant_tables.id', table_id)
+      .where('restaurant_tables.is_active', true)
+      .where('restaurants.is_active', true)
       .first();
     
     if (!table) {
@@ -55,9 +77,33 @@ const createOrder = async (req, res) => {
         success: false,
         error: {
           code: 'TABLE_NOT_FOUND',
-          message: 'Table not found'
+          message: 'Table not found or restaurant not active'
         }
       });
+    }
+    
+    // Auto-determine restaurant_id from table if not provided
+    const finalRestaurantId = restaurant_id || table.restaurant_id;
+    
+    // Auto-determine target kitchen based on order type and restaurant
+    let finalTargetKitchenId = target_kitchen_id;
+    if (!finalTargetKitchenId) {
+      if (order_type === 'bar') {
+        // Find bar kitchen
+        const barKitchen = await Restaurant.query()
+          .where('restaurant_type', 'bar')
+          .where('has_kitchen', true)
+          .where('is_active', true)
+          .first();
+        finalTargetKitchenId = barKitchen?.id;
+      } else {
+        // Use restaurant's own kitchen or main kitchen
+        const restaurantKitchen = await Restaurant.query()
+          .where('id', finalRestaurantId)
+          .where('has_kitchen', true)
+          .first();
+        finalTargetKitchenId = restaurantKitchen?.id || finalRestaurantId;
+      }
     }
     
     // For customers, verify they have a reservation for this table
@@ -138,6 +184,10 @@ const createOrder = async (req, res) => {
           order_type,
           room_booking_id: room_booking_id || null,
           waiter_id: userRole === 'waiter' ? userId : null,
+          restaurant_id: finalRestaurantId,
+          target_kitchen_id: finalTargetKitchenId,
+          kitchen_status: 'pending',
+          kitchen_assigned_at: new Date(),
           total_amount: totalAmount,
           tax_amount: taxAmount,
           status: 'pending',
@@ -160,7 +210,39 @@ const createOrder = async (req, res) => {
       
       await trx('order_items').insert(orderItems);
       
+      // Log kitchen assignment
+      if (finalTargetKitchenId) {
+        await trx('order_kitchen_logs').insert({
+          id: uuidv4(),
+          order_id: orderId,
+          restaurant_id: finalTargetKitchenId,
+          action: 'assigned',
+          performed_by: userId,
+          notes: `Order automatically assigned to kitchen`,
+          created_at: new Date()
+        });
+      }
+      
       await trx.commit();
+      
+      // Emit Socket.io event for new order
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        socketHandler.emitNewOrder({
+          orderId,
+          orderNumber,
+          tableId: table_id,
+          tableNumber: table.table_name,
+          kitchenTypes: [order_type],
+          waiterId: userRole === 'waiter' ? userId : null,
+          customerInfo: {
+            name: `${req.user.first_name} ${req.user.last_name}`,
+            userId
+          },
+          restaurantId: finalRestaurantId,
+          targetKitchenId: finalTargetKitchenId
+        });
+      }
       
       // Get complete order details
       const orderDetails = await getOrderDetails(orderId);
@@ -718,11 +800,709 @@ const getOrderDetails = async (orderId) => {
   };
 };
 
+/**
+ * Kitchen Management Functions
+ */
+
+/**
+ * Get orders assigned to a specific kitchen
+ * GET /api/v1/restaurant/kitchen/:kitchenId/orders
+ */
+const getKitchenOrders = async (req, res) => {
+  try {
+    const { kitchenId } = req.params;
+    const { status } = req.query;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Verify user has access to this kitchen
+    if (!['admin', 'manager'].includes(userRole)) {
+      const hasAccess = await Restaurant.relatedQuery('staff')
+        .for(kitchenId)
+        .where('users.id', userId)
+        .where('restaurant_staff.role', 'in', ['chef', 'bartender'])
+        .where('restaurant_staff.is_active', true)
+        .first();
+      
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'You do not have access to this kitchen'
+          }
+        });
+      }
+    }
+    
+    let query = db('orders as o')
+      .select(
+        'o.*',
+        'rt.table_number',
+        'rt.location as table_location',
+        'u.first_name',
+        'u.last_name',
+        'w.first_name as waiter_first_name',
+        'w.last_name as waiter_last_name',
+        'r.name as restaurant_name',
+        'tk.name as kitchen_name'
+      )
+      .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .join('users as u', 'o.user_id', 'u.id')
+      .leftJoin('users as w', 'o.waiter_id', 'w.id')
+      .leftJoin('restaurants as r', 'o.restaurant_id', 'r.id')
+      .leftJoin('restaurants as tk', 'o.target_kitchen_id', 'tk.id')
+      .where('o.target_kitchen_id', kitchenId)
+      .orderBy('o.kitchen_assigned_at', 'asc');
+    
+    if (status) {
+      query = query.where('o.kitchen_status', status);
+    }
+    
+    const orders = await query;
+    
+    // Get order items for each order
+    const ordersWithItems = await Promise.all(
+      orders.map(async (order) => {
+        const items = await db('order_items as oi')
+          .select('oi.*', 'mi.name as item_name', 'mi.description', 'mc.name as category_name')
+          .join('menu_items as mi', 'oi.menu_item_id', 'mi.id')
+          .join('menu_categories as mc', 'mi.category_id', 'mc.id')
+          .where('oi.order_id', order.id)
+          .orderBy('oi.created_at', 'asc');
+        
+        return {
+          ...order,
+          items
+        };
+      })
+    );
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        orders: ordersWithItems,
+        totalOrders: orders.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get kitchen orders error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to fetch kitchen orders'
+      }
+    });
+  }
+};
+
+/**
+ * Accept order in kitchen
+ * POST /api/v1/restaurant/kitchen/:kitchenId/orders/:orderId/accept
+ */
+const acceptKitchenOrder = async (req, res) => {
+  try {
+    const { kitchenId, orderId } = req.params;
+    const { estimated_time, notes } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Verify user has chef/bartender access to this kitchen
+    if (!['admin', 'manager'].includes(userRole)) {
+      const hasAccess = await Restaurant.relatedQuery('staff')
+        .for(kitchenId)
+        .where('users.id', userId)
+        .where('restaurant_staff.role', 'in', ['chef', 'bartender'])
+        .where('restaurant_staff.is_active', true)
+        .first();
+      
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'You do not have chef/bartender access to this kitchen'
+          }
+        });
+      }
+    }
+    
+    // Get the order
+    const order = await db('orders')
+      .where('id', orderId)
+      .where('target_kitchen_id', kitchenId)
+      .first();
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found in this kitchen'
+        }
+      });
+    }
+    
+    if (order.kitchen_status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: `Order is already ${order.kitchen_status}`
+        }
+      });
+    }
+    
+    // Start transaction
+    const trx = await db.transaction();
+    
+    try {
+      // Update order status
+      const updateData = {
+        kitchen_status: 'accepted',
+        kitchen_accepted_at: new Date(),
+        kitchen_notes: notes || null,
+        updated_at: new Date()
+      };
+      
+      if (estimated_time) {
+        updateData.estimated_preparation_time = parseInt(estimated_time);
+      }
+      
+      await trx('orders')
+        .where('id', orderId)
+        .update(updateData);
+      
+      // Log the acceptance
+      await trx('order_kitchen_logs').insert({
+        id: uuidv4(),
+        order_id: orderId,
+        restaurant_id: kitchenId,
+        action: 'accepted',
+        performed_by: userId,
+        notes: notes || null,
+        created_at: new Date()
+      });
+      
+      await trx.commit();
+      
+      // Emit Socket.io event for order acceptance
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        const kitchenDetails = await Restaurant.query().findById(kitchenId);
+        socketHandler.emitKitchenOrderAction({
+          orderId,
+          orderNumber: order.order_number,
+          action: 'accepted',
+          kitchenName: kitchenDetails?.name || 'Kitchen',
+          estimatedTime: estimated_time,
+          notes: notes,
+          chefId: userId,
+          waiterId: order.waiter_id
+        });
+      }
+      
+      // Get updated order details
+      const updatedOrder = await getOrderDetails(orderId);
+      
+      return res.status(200).json({
+        success: true,
+        data: { order: updatedOrder },
+        message: 'Order accepted in kitchen'
+      });
+      
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
+    
+  } catch (error) {
+    console.error('Accept kitchen order error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to accept order in kitchen'
+      }
+    });
+  }
+};
+
+/**
+ * Reject order in kitchen
+ * POST /api/v1/restaurant/kitchen/:kitchenId/orders/:orderId/reject
+ */
+const rejectKitchenOrder = async (req, res) => {
+  try {
+    const { kitchenId, orderId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Rejection reason is required'
+        }
+      });
+    }
+    
+    // Verify user has chef/bartender access to this kitchen
+    if (!['admin', 'manager'].includes(userRole)) {
+      const hasAccess = await Restaurant.relatedQuery('staff')
+        .for(kitchenId)
+        .where('users.id', userId)
+        .where('restaurant_staff.role', 'in', ['chef', 'bartender'])
+        .where('restaurant_staff.is_active', true)
+        .first();
+      
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'You do not have chef/bartender access to this kitchen'
+          }
+        });
+      }
+    }
+    
+    // Get the order
+    const order = await db('orders')
+      .where('id', orderId)
+      .where('target_kitchen_id', kitchenId)
+      .first();
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found in this kitchen'
+        }
+      });
+    }
+    
+    if (!['pending', 'accepted'].includes(order.kitchen_status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: `Cannot reject order with status ${order.kitchen_status}`
+        }
+      });
+    }
+    
+    // Start transaction
+    const trx = await db.transaction();
+    
+    try {
+      // Update order status
+      await trx('orders')
+        .where('id', orderId)
+        .update({
+          kitchen_status: 'rejected',
+          kitchen_rejected_at: new Date(),
+          kitchen_notes: reason,
+          updated_at: new Date()
+        });
+      
+      // Log the rejection
+      await trx('order_kitchen_logs').insert({
+        id: uuidv4(),
+        order_id: orderId,
+        restaurant_id: kitchenId,
+        action: 'rejected',
+        performed_by: userId,
+        notes: reason,
+        created_at: new Date()
+      });
+      
+      await trx.commit();
+      
+      // Emit Socket.io event for order rejection
+      const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        const kitchenDetails = await Restaurant.query().findById(kitchenId);
+        socketHandler.emitKitchenOrderAction({
+          orderId,
+          orderNumber: order.order_number,
+          action: 'rejected',
+          kitchenName: kitchenDetails?.name || 'Kitchen',
+          reason: reason,
+          chefId: userId,
+          waiterId: order.waiter_id
+        });
+      }
+      
+      // Get updated order details
+      const updatedOrder = await getOrderDetails(orderId);
+      
+      return res.status(200).json({
+        success: true,
+        data: { order: updatedOrder },
+        message: 'Order rejected in kitchen'
+      });
+      
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
+    
+  } catch (error) {
+    console.error('Reject kitchen order error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to reject order in kitchen'
+      }
+    });
+  }
+};
+
+/**
+ * Transfer order to different kitchen
+ * POST /api/v1/restaurant/orders/:orderId/transfer
+ */
+const transferOrderToKitchen = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { target_kitchen_id, reason } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    if (!target_kitchen_id || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Target kitchen and reason are required'
+        }
+      });
+    }
+    
+    // Only waiters, managers, and admins can transfer orders
+    if (!['waiter', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only waiters, managers, and admins can transfer orders'
+        }
+      });
+    }
+    
+    // Verify target kitchen exists
+    const targetKitchen = await Restaurant.query()
+      .findById(target_kitchen_id)
+      .where('has_kitchen', true)
+      .where('is_active', true);
+    
+    if (!targetKitchen) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'KITCHEN_NOT_FOUND',
+          message: 'Target kitchen not found or not active'
+        }
+      });
+    }
+    
+    // Get the order
+    const order = await db('orders')
+      .where('id', orderId)
+      .first();
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+    
+    // Check if waiter owns the order
+    if (userRole === 'waiter' && order.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only transfer your own orders'
+        }
+      });
+    }
+    
+    const oldKitchenId = order.target_kitchen_id;
+    
+    // Start transaction
+    const trx = await db.transaction();
+    
+    try {
+      // Update order
+      await trx('orders')
+        .where('id', orderId)
+        .update({
+          target_kitchen_id,
+          kitchen_status: 'pending',
+          kitchen_assigned_at: new Date(),
+          kitchen_accepted_at: null,
+          kitchen_rejected_at: null,
+          kitchen_notes: null,
+          updated_at: new Date()
+        });
+      
+      // Log the transfer
+      await trx('order_kitchen_logs').insert({
+        id: uuidv4(),
+        order_id: orderId,
+        restaurant_id: target_kitchen_id,
+        action: 'transferred',
+        performed_by: userId,
+        notes: `Transferred from kitchen ${oldKitchenId}. Reason: ${reason}`,
+        created_at: new Date()
+      });
+      
+      await trx.commit();
+      
+      // Get updated order details
+      const updatedOrder = await getOrderDetails(orderId);
+      
+      return res.status(200).json({
+        success: true,
+        data: { order: updatedOrder },
+        message: 'Order transferred to new kitchen'
+      });
+      
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
+    
+  } catch (error) {
+    console.error('Transfer order error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to transfer order'
+      }
+    });
+  }
+};
+
+/**
+ * Get kitchen logs for an order
+ * GET /api/v1/restaurant/orders/:orderId/kitchen-logs
+ */
+const getOrderKitchenLogs = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get order to check permissions
+    const order = await db('orders')
+      .where('id', orderId)
+      .first();
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+    
+    // Check permissions
+    if (userRole === 'customer' && order.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only view logs for your own orders'
+        }
+      });
+    }
+    
+    if (userRole === 'waiter' && order.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only view logs for orders assigned to you'
+        }
+      });
+    }
+    
+    // Get kitchen logs
+    const logs = await db('order_kitchen_logs as okl')
+      .select(
+        'okl.*',
+        'r.name as kitchen_name',
+        'u.first_name',
+        'u.last_name'
+      )
+      .join('restaurants as r', 'okl.restaurant_id', 'r.id')
+      .join('users as u', 'okl.performed_by', 'u.id')
+      .where('okl.order_id', orderId)
+      .orderBy('okl.created_at', 'asc');
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        logs,
+        totalLogs: logs.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get order kitchen logs error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to fetch kitchen logs'
+      }
+    });
+  }
+};
+
+/**
+ * Generate bill for order
+ * POST /api/v1/restaurant/orders/:orderId/bill
+ */
+const generateBill = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get order details
+    const orderDetails = await getOrderDetails(orderId);
+    
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+    
+    // Check permissions
+    if (userRole === 'customer' && orderDetails.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only generate bills for your own orders'
+        }
+      });
+    }
+    
+    if (userRole === 'waiter' && orderDetails.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only generate bills for orders assigned to you'
+        }
+      });
+    }
+    
+    // Calculate bill details
+    const billData = {
+      orderId,
+      orderNumber: orderDetails.order_number,
+      customer: {
+        name: `${orderDetails.first_name} ${orderDetails.last_name}`,
+        phone: orderDetails.phone
+      },
+      table: {
+        number: orderDetails.table_number,
+        location: orderDetails.table_location
+      },
+      items: orderDetails.items.map(item => ({
+        name: item.item_name,
+        quantity: item.quantity,
+        unitPrice: parseFloat(item.unit_price),
+        totalPrice: parseFloat(item.total_price)
+      })),
+      summary: {
+        subtotal: parseFloat(orderDetails.total_amount),
+        tax: parseFloat(orderDetails.tax_amount || 0),
+        total: parseFloat(orderDetails.total_amount) + parseFloat(orderDetails.tax_amount || 0)
+      },
+      generatedAt: new Date(),
+      generatedBy: {
+        id: userId,
+        name: `${req.user.first_name} ${req.user.last_name}`,
+        role: userRole
+      }
+    };
+    
+    // Update order status to indicate bill generated
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        status: 'billed',
+        billed_at: new Date(),
+        updated_at: new Date()
+      });
+    
+    // Emit Socket.io event for bill generation
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderStatusUpdate({
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'billed',
+        userId,
+        userRole,
+        waiterId: orderDetails.waiter_id
+      });
+    }
+    
+    return res.status(200).json({
+      success: true,
+      data: { bill: billData },
+      message: 'Bill generated successfully'
+    });
+    
+  } catch (error) {
+    console.error('Generate bill error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to generate bill'
+      }
+    });
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
   getOrderById,
   updateOrderStatus,
   updateOrderItemStatus,
-  addOrderItems
+  addOrderItems,
+  generateBill,
+  // Kitchen management
+  getKitchenOrders,
+  acceptKitchenOrder,
+  rejectKitchenOrder,
+  transferOrderToKitchen,
+  getOrderKitchenLogs
 };

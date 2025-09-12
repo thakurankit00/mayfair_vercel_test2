@@ -30,10 +30,12 @@ module.exports = {
           700: '#374151',
           800: '#1f2937',
           900: '#111827',
-        }
+        },
+        'light-orange': '#FF9933',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        
+        hightower: ['High Tower Text', 'serif'],
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',

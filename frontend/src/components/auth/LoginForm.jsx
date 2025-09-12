@@ -190,6 +190,27 @@ const LoginForm = () => {
               >
                 Chef
               </button>
+              <button
+                onClick={() => quickLogin('carlos.waiter@mayfairhotel.com')}
+                disabled={isLoading}
+                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Waiter
+              </button>
+              <button
+                onClick={() => quickLogin('lisa.bartender@mayfairhotel.com')}
+                disabled={isLoading}
+                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Bartender
+              </button>
+              <button
+                onClick={() => quickLogin('david.admin@mayfairhotel.com')}
+                disabled={isLoading}
+                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Admin
+              </button>
             </div>
           </div>
 
