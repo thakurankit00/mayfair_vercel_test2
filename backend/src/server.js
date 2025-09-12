@@ -31,7 +31,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -57,7 +57,7 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
   credentials: true
 }));
 
@@ -125,20 +125,20 @@ app.use(errorHandler);
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
+  console.log(`🚀 Server is running on port ${PORT} - server.js:128`);
+  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:129`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'} - server.js:130`);
+  console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:131`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('⏹️  SIGTERM received, shutting down gracefully');
+  console.log('⏹️  SIGTERM received, shutting down gracefully - server.js:136');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('⏹️  SIGINT received, shutting down gracefully');
+  console.log('⏹️  SIGINT received, shutting down gracefully - server.js:141');
   process.exit(0);
 });
 

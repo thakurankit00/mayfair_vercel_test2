@@ -13,7 +13,7 @@ import {
 
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://192.168.1.5:3000/api/v1',
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:3000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -39,7 +39,7 @@ api.interceptors.response.use(
     return response.data; // Return just the data part
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error: - api.js:42', error.response?.data || error.message);
     
     // Handle 401 errors by clearing auth data
     if (error.response?.status === 401) {
@@ -85,7 +85,7 @@ export const authApi = {
       await api.post('/auth/logout');
     } catch (error) {
       // Continue with logout even if API call fails
-      console.warn('Logout API call failed:', error.message);
+      console.warn('Logout API call failed: - api.js:88', error.message);
     } finally {
       // Always clear local storage
       localStorage.removeItem('token');
@@ -108,7 +108,7 @@ export const authApi = {
       try {
         return JSON.parse(userStr);
       } catch (error) {
-        console.error('Error parsing stored user data:', error);
+        console.error('Error parsing stored user data: - api.js:111', error);
         localStorage.removeItem('user');
         localStorage.removeItem('token');
         return null;
