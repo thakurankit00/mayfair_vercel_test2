@@ -17,7 +17,7 @@ const createOrder = async (req, res) => {
     const {
       table_id,
       table_reservation_id,
-      order_type, // 'restaurant', 'bar', 'room_service'
+      order_type, // 'restaurant', 'bar', 'room_service','dine_in','takeway'
       room_booking_id, // for room service
       restaurant_id, // which restaurant the order is for
       target_kitchen_id, // which kitchen should prepare the order
@@ -53,7 +53,7 @@ const createOrder = async (req, res) => {
       }
     }
     
-    if (!['restaurant', 'bar', 'room_service'].includes(order_type)) {
+    if (!['restaurant', 'bar', 'room_service','dine_in','takeway'].includes(order_type)) {
       return res.status(400).json({
         success: false,
         error: {

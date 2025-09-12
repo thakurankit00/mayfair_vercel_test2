@@ -192,12 +192,28 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                               </span>
                             )}
                           </div>
-                          <button
-                            onClick={() => handleAddItem(item, category.id)}
-                            className="ml-3 bg-blue-600 text-white px-3 py-1 text-sm rounded hover:bg-blue-700"
-                          >
-                            Add
-                          </button>
+                         <button
+  onClick={() => handleAddItem(item, category.id)}
+  className={`ml-3 px-3 py-1 text-sm rounded text-white relative overflow-hidden ${
+    selectedItems.find(i => i.id === item.id) ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'
+  }`}
+>
+  <span
+    className={`absolute inset-0 flex items-center justify-center transition-transform duration-200 ${
+      selectedItems.find(i => i.id === item.id) ? 'scale-100 opacity-100' : 'scale-0 opacity-0 '
+    }`}
+  >
+    ✔
+  </span>
+  <span
+    className={`flex items-center justify-center transition-transform duration-200 ${
+      selectedItems.find(i => i.id === item.id) ? 'scale-0 opacity-0' : 'scale-100 opacity-100'
+    }`}
+  >
+    +
+  </span>
+</button>
+
                         </div>
                       </div>
                     ))}
