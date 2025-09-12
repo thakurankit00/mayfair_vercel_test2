@@ -31,7 +31,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+    origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -57,7 +57,7 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
   credentials: true
 }));
 

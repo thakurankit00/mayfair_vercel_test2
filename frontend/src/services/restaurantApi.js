@@ -178,8 +178,8 @@ export const restaurantTableApi = {
   },
 
   // Create new table
-  createTable: async (tableData) => {
-    const response = await api.post('/restaurant/tables', tableData);
+  createTable: async (restaurantId, tableData) => {
+    const response = await api.post(`/restaurant/restaurants/${restaurantId}/tables`, tableData);
     return response.data.data;
   },
 
@@ -201,12 +201,48 @@ export const restaurantTableApi = {
 // ============================================================================
 
 export const uploadApi = {
-  // Upload base64 image to backend -> Cloudinary
   uploadImage: async (base64Image) => {
-    const response = await api.post('/upload', { image: base64Image });
-    return response.data; // { success, url, public_id }
+    try {
+      // Ensure we're working with a base64 string
+      if (typeof base64Image !== 'string' || !base64Image.startsWith('data:image/')) {
+        throw new Error("Expected a base64 image string");
+      }
+
+      const formData = new FormData();
+      formData.append("file", base64Image);
+      formData.append("upload_preset", "Mayfair images"); // Make sure this preset exists and is unsigned
+      
+      console.log("Uploading base64 to Cloudinary");
+      
+      const response = await fetch("https://api.cloudinary.com/v1_1/dbgojkhlx/image/upload", {
+        method: "POST",
+        body: formData,
+      });
+      
+      console.log("Cloudinary response status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Cloudinary error response:", errorText);
+        throw new Error(`Cloudinary upload failed: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log("Cloudinary success response:", result);
+      
+      // Return custom format that matches your expectation
+      return {
+        success: true,
+        url: result.secure_url,
+        public_id: result.public_id
+      };
+    } catch (error) {
+      console.error("Upload error:", error);
+      throw error;
+    }
   },
 };
+
 
 export const restaurantMenuApi = {
   // Get menu categories
