@@ -331,6 +331,12 @@ export const restaurantReservationApi = {
     return response.data.data;
   },
 
+  // Get single reservation
+  getReservation: async (id) => {
+    const response = await api.get(`/restaurant/reservations/${id}`);
+    return response.data.data;
+  },
+
   // Update reservation
   updateReservation: async (id, updateData) => {
     const response = await api.put(`/restaurant/reservations/${id}`, updateData);

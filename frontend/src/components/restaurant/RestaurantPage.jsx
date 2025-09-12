@@ -7,6 +7,7 @@ import PlaceOrderModal from './PlaceOrderModal';
 import { useAuth } from '../../contexts/AuthContext';
 import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
+import RestaurantTables from './RestaurantTables';
 import StatusBadge from '../common/StatusBadge';
 import {
   restaurantApi,
@@ -64,14 +65,11 @@ const RestaurantPage = () => {
 
   // Data states
   const [restaurants, setRestaurants] = useState([]);
-  const [tables, setTables] = useState([]);
   const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
   const [reservations, setReservations] = useState([]);
   const [orders, setOrders] = useState([]);
 
   // Form states
-  const [showAddTableModal, setShowAddTableModal] = useState(false);
-  const [editingTable, setEditingTable] = useState(null);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
   const [editingReservation, setEditingReservation] = useState(null);
@@ -100,12 +98,6 @@ const RestaurantPage = () => {
       setLoading(true);
       try {
         switch (activeTab) {
-          case 'tables':
-            if (['admin', 'manager', 'receptionist', 'waiter'].includes(user.role)) {
-              const tableData = await restaurantTableApi.getTables(selectedRestaurant);
-              setTables(tableData.tables || []);
-            }
-            break;
           case 'menu':
             const menuData = await restaurantMenuApi.getMenu(selectedRestaurant);
             setMenu(menuData);
@@ -118,8 +110,9 @@ const RestaurantPage = () => {
             const orderData = await restaurantOrderApi.getOrders();
             setOrders(orderData.orders || []);
             break;
+          case 'tables':
           case 'kitchen':
-            // Kitchen data is loaded within KitchenDashboard component
+            // Data is loaded within respective components
             break;
           default:
             break;
@@ -135,27 +128,7 @@ const RestaurantPage = () => {
     }
   }, [activeTab, user.role, selectedRestaurant]);
 
-  const handleTableSaved = async () => {
-    // Refresh tables data after add/update
-    try {
-      const tableData = await restaurantTableApi.getTables(selectedRestaurant);
-      setTables(tableData.tables || []);
-    } catch (err) {
-      setError(err.message || 'Failed to refresh tables');
-    }
-  };
 
-  const handleDeleteTable = async (tableId) => {
-    if (!window.confirm('Are you sure you want to delete this table?')) return;
-    
-    try {
-      await restaurantTableApi.deleteTable(tableId);
-      const tableData = await restaurantTableApi.getTables(selectedRestaurant);
-      setTables(tableData.tables || []);
-    } catch (err) {
-      setError(err.message || 'Failed to delete table');
-    }
-  };
 
   const handleOrderPlaced = async () => {
     // Refresh orders data after placing new order
@@ -348,20 +321,10 @@ const RestaurantPage = () => {
 
           {/* Tables Tab */}
           {activeTab === 'tables' && (
-            <TablesTab 
-              tables={tables} 
-              userRole={user.role}
+            <RestaurantTables
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
-              onAddTable={() => {
-                setEditingTable(null);
-                setShowAddTableModal(true);
-              }}
-              onEditTable={(table) => {
-                setEditingTable(table);
-                setShowAddTableModal(true);
-              }}
-              onDeleteTable={handleDeleteTable}
+              userRole={user.role}
             />
           )}
 
@@ -414,18 +377,7 @@ const RestaurantPage = () => {
         />
       )}
 
-      {/* Add/Edit Table Modal */}
-      {showAddTableModal && (
-        <AddTableForm
-          table={editingTable}
-          selectedRestaurant={selectedRestaurant}
-          onClose={() => {
-            setShowAddTableModal(false);
-            setEditingTable(null);
-          }}
-          onSave={handleTableSaved}
-        />
-      )}
+
     </div>
   );
 };
@@ -440,14 +392,12 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
   const [error, setError] = useState(""); // Added error state
   const [newItem, setNewItem] = useState({
     category_id: "",
-    category_id: "",
     name: "",
     description: "",
     price: "",
     preparation_time: "",
     is_vegetarian: false,
     is_vegan: false,
-    image_url: "",
     image_url: "",
   });
 
@@ -866,8 +816,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
               <div>
                 <label className="block text-sm font-medium">Name *</label>
                 <input
-                  name='name'
-                 
+                  name="name"
                   type="text"
                   value={newItem.name}
                   onChange={handleInputChange}
@@ -880,8 +829,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
               <div>
                 <label className="block text-sm font-medium">Description *</label>
                 <textarea
-                  name='description'
-                 
+                  name="description"
                   value={newItem.description}
                   onChange={handleInputChange}
                   className="w-full border rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -894,8 +842,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
               <div>
                 <label className="block text-sm font-medium">Price (₹) *</label>
                 <input
-                  name='price'
-                 
+                  name="price"
                   type="number"
                   step="0.01"
                   min="0"
@@ -912,8 +859,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                   Preparation Time (mins)
                 </label>
                 <input
-                  name='preparation_time'
-                
+                  name="preparation_time"
                   type="number"
                   min="0"
                   value={newItem.preparation_time}
@@ -928,7 +874,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                   <input
                     type="checkbox"
                     name="is_vegetarian"
-                    
                     checked={newItem.is_vegetarian}
                     onChange={handleInputChange}
                     disabled={loading}
@@ -938,7 +883,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
                 <label className="flex items-center space-x-2">
                   <input
                     name="is_vegan"
-                   
                     type="checkbox"
                     checked={newItem.is_vegan}
                     onChange={handleInputChange}
@@ -1061,7 +1005,10 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
                     {reservation.reservation_reference}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {reservation.first_name} {reservation.last_name}
+                    {reservation.user_first_name && reservation.user_last_name 
+                      ? `${reservation.user_first_name} ${reservation.user_last_name}`
+                      : reservation.customer_name || '-'
+                    }
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     Table {reservation.table_number} ({reservation.location})
@@ -1359,144 +1306,6 @@ const TableActions = ({ table, onEdit, onDelete }) => {
   );
 };
 
-// Tables Tab Component
-const TablesTab = ({ tables, userRole, selectedRestaurant, restaurants }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [tableList, setTableList] = useState(tables || []);
 
-  useEffect(() => {
-    setTableList(tables || []);
-  }, [tables]);
-
-  const selectedRestaurantData = restaurants.find(
-    (r) => r.id === selectedRestaurant
-  );
-
-  const handleTableAdded = (newTable) => {
-    console.log("New table added:", newTable);
-    if (newTable) {
-      setTableList((prev) => [...prev, newTable]);
-    }
-  };
-
-  const handleTableEdited = (updatedTable) => {
-    console.log("Table updated:", updatedTable);
-    setTableList((prev) =>
-      prev.map((t) => (t.id === updatedTable.id ? updatedTable : t))
-    );
-  };
-
-  const handleTableDeleted = (tableId) => {
-    console.log("Table deleted:", tableId);
-    setTableList((prev) => prev.filter((t) => t.id !== tableId));
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">
-          Restaurant Tables
-        </h3>
-        {["admin", "manager"].includes(userRole) && selectedRestaurant && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-orange-500"
-          >
-            Add Table
-          </button>
-        )}
-      </div>
-
-      {selectedRestaurantData && (
-        <div className="bg-blue-50 p-4 rounded-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <h4 className="font-semibold text-blue-900">
-                {selectedRestaurantData.name}
-              </h4>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {selectedRestaurantData.restaurant_type}
-              </span>
-            </div>
-            <div className="text-sm text-blue-700">
-              Total Tables: {tableList.length} | Max Capacity:{" "}
-              {selectedRestaurantData.max_capacity}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!selectedRestaurant && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-yellow-800 text-sm">
-            💡 Select a specific restaurant above to view and manage its tables.
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {tableList.map((tableItem) => (
-          <div key={tableItem.id} className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-lg font-semibold text-gray-900">
-                Table {tableItem.table_number}
-              </h4>
-              {["admin", "manager"].includes(userRole) && (
-                <EditTableModal
-                  item={tableItem}
-                  onEdit={handleTableEdited}
-                  onDelete={handleTableDeleted}
-                />
-              )}
-            </div>
-
-            <div className="space-y-2 text-sm text-gray-600">
-              <div className="flex items-center justify-between">
-                <span>Capacity:</span>
-                <span className="font-medium">{tableItem.capacity} guests</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Location:</span>
-                <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                  {tableItem.location?.replace("_", " ") || "N/A"}
-                </span>
-              </div>
-              {tableItem.restaurant_name && (
-                <div className="flex items-center justify-between">
-                  <span>Restaurant:</span>
-                  <span className="text-xs font-medium text-gray-700">
-                    {tableItem.restaurant_name}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {tableList.length === 0 && (
-        <div className="text-center py-12">
-          <div className="text-gray-400 text-lg">🪑</div>
-          <p className="text-gray-600 mt-2">No tables configured</p>
-          {["admin", "manager"].includes(userRole) && (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-            >
-              Add First Table
-            </button>
-          )}
-        </div>
-      )}
-
-      <AddTableForm
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onTableAdded={handleTableAdded}
-        restaurantId={selectedRestaurant}
-      />
-    </div>
-  );
-};
  
 export default RestaurantPage;

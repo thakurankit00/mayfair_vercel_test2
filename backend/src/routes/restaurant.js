@@ -87,8 +87,11 @@ router.get('/restaurants/:restaurantId/menu/categories', getMenuCategories);
 router.post('/restaurants/:restaurantId/menu/categories', authenticateToken, requireRole(['admin', 'manager']), createMenuCategory);
 
 // Update menu category (Admin/Manager)
-const { updateMenuCategory } = require('../controllers/restaurantController');
+const { updateMenuCategory, deleteMenuCategory } = require('../controllers/restaurantController');
 router.put('/menu/categories/:id', authenticateToken, requireRole(['admin', 'manager']), updateMenuCategory);
+
+// Delete menu category (Admin/Manager)
+router.delete('/menu/categories/:id', authenticateToken, requireRole(['admin', 'manager']), deleteMenuCategory);
 
 // Get menu with items (Public)
 router.get('/menu', getMenu);
@@ -115,6 +118,10 @@ router.post('/reservations', authenticateToken, createReservation);
 
 // Get reservations (Protected)
 router.get('/reservations', authenticateToken, getReservations);
+
+// Get single reservation (Protected)
+const { getReservation } = require('../controllers/reservationController');
+router.get('/reservations/:id', authenticateToken, getReservation);
 
 // Update reservation (Protected)
 router.put('/reservations/:id', authenticateToken, updateReservation);

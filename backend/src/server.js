@@ -42,8 +42,9 @@ const PORT = process.env.PORT || 3000;
 // Initialize Socket.io handler
 const socketHandler = new SocketHandler(io);
 
-// Make socket handler available to routes
+// Make socket handler and io available to routes
 app.set('socketHandler', socketHandler);
+app.set('io', io);
 
 // Setup Swagger documentation
 setupSwagger(app);

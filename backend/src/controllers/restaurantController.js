@@ -74,6 +74,7 @@ const updateMenuCategory = async (req, res) => {
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const Restaurant = require('../models/Restaurant');
+const { getTableBookingStatus } = require('./restaurantController');
 
 /**
  * Restaurant Table Management Controller
@@ -117,7 +118,7 @@ const getRestaurants = async (req, res) => {
 };
 
 /**
- * Get restaurant tables by restaurant
+ * Get restaurant tables by restaurant with booking status
  * GET /api/v1/restaurants/:restaurantId/tables
  */
 const getTables = async (req, res) => {
@@ -142,13 +143,31 @@ const getTables = async (req, res) => {
     
     const tables = await query;
     
+    // Add booking status for each table
+    const today = new Date().toISOString().split('T')[0];
+    const tablesWithStatus = await Promise.all(
+      tables.map(async (table) => {
+        // Check if table has confirmed or seated reservation today
+        const reservation = await db('table_reservations')
+          .where('table_id', table.id)
+          .where('reservation_date', today)
+          .whereIn('status', ['confirmed', 'seated'])
+          .first();
+        
+        return {
+          ...table,
+          booking_status: reservation ? 'booked' : 'available'
+        };
+      })
+    );
+    
     return res.status(200).json({
       success: true,
       data: {
-        tables,
-        totalTables: tables.length,
-        locations: [...new Set(tables.map(t => t.location))],
-        restaurants: [...new Set(tables.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
+        tables: tablesWithStatus,
+        totalTables: tablesWithStatus.length,
+        locations: [...new Set(tablesWithStatus.map(t => t.location))],
+        restaurants: [...new Set(tablesWithStatus.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
       }
     });
   } catch (error) {
@@ -236,9 +255,25 @@ const createTable = async (req, res) => {
       })
       .returning('*');
     
+    // Add booking status (new tables are always available)
+    const tableWithStatus = {
+      ...newTable[0],
+      booking_status: 'available'
+    };
+    
+    // Emit socket event for new table creation
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('table_created', { 
+        table: tableWithStatus,
+        restaurant_id: restaurantId,
+        timestamp: new Date()
+      });
+    }
+    
     return res.status(201).json({
       success: true,
-      data: { table: newTable[0] },
+      data: { table: tableWithStatus },
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
@@ -306,9 +341,22 @@ const updateTable = async (req, res) => {
       .update(updateData)
       .returning('*');
     
+    // Add current booking status
+    const today = new Date().toISOString().split('T')[0];
+    const reservation = await db('table_reservations')
+      .where('table_id', id)
+      .where('reservation_date', today)
+      .whereIn('status', ['confirmed', 'seated'])
+      .first();
+    
+    const tableWithStatus = {
+      ...updatedTable[0],
+      booking_status: reservation ? 'booked' : 'available'
+    };
+    
     return res.status(200).json({
       success: true,
-      data: { table: updatedTable[0] },
+      data: { table: tableWithStatus },
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
@@ -368,6 +416,12 @@ const deleteTable = async (req, res) => {
     await db('restaurant_tables')
       .where('id', id)
       .update({ is_active: false, updated_at: new Date() });
+    
+    // Emit socket event for table deletion
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('table_deleted', { table_id: id });
+    }
     
     return res.status(200).json({
       success: true,
@@ -768,6 +822,70 @@ const deleteMenuItem = async (req, res) => {
   }
 };
 
+/**
+ * Delete menu category (Admin/Manager)
+ * DELETE /api/v1/restaurant/menu/categories/:id
+ */
+const deleteMenuCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const existingCategory = await db('menu_categories')
+      .where('id', id)
+      .where('is_active', true)
+      .first();
+    
+    if (!existingCategory) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CATEGORY_NOT_FOUND',
+          message: 'Menu category not found'
+        }
+      });
+    }
+    
+    // Check if category has active menu items
+    const activeItems = await db('menu_items')
+      .where('category_id', id)
+      .where('is_available', true)
+      .count('id as count')
+      .first();
+    
+    if (parseInt(activeItems.count) > 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'CANNOT_DELETE_CATEGORY',
+          message: 'Cannot delete category with active menu items'
+        }
+      });
+    }
+    
+    // Soft delete
+    await db('menu_categories')
+      .where('id', id)
+      .update({ 
+        is_active: false, 
+        updated_at: new Date() 
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Menu category deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete menu category error: - restaurantController.js:720', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to delete menu category'
+      }
+    });
+  }
+};
+
 module.exports = {
   // Restaurant Management
   getRestaurants,
@@ -782,6 +900,7 @@ module.exports = {
   getMenuCategories,
   createMenuCategory,
   updateMenuCategory,
+  deleteMenuCategory,
   getMenu,
   createMenuItem,
   updateMenuItem,
