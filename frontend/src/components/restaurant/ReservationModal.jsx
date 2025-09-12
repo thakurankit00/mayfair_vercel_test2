@@ -293,7 +293,7 @@ const ReservationModal = ({ reservation, prefilledTableId, onClose, onSave }) =>
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-5 py-2 bg-orange-400 text-white font-semibold rounded-lg shadow-md hover:bg-orange-500 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={saving}
               >
                 {saving ? 'Saving...' : (reservation ? 'Update' : 'Create')}
