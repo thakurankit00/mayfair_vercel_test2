@@ -18,6 +18,7 @@ const createOrder = async (req, res) => {
       table_id,
       table_reservation_id,
       order_type, // 'restaurant', 'bar', 'room_service','dine_in','takeway'
+      kitchen_type,//'Bar Kitchen','Main Kitchen'
       room_booking_id, // for room service
       restaurant_id, // which restaurant the order is for
       target_kitchen_id, // which kitchen should prepare the order
@@ -186,6 +187,7 @@ const createOrder = async (req, res) => {
           waiter_id: userRole === 'waiter' ? userId : null,
           restaurant_id: finalRestaurantId,
           target_kitchen_id: finalTargetKitchenId,
+          // kitchen_type:kitchen_type,
           kitchen_status: 'pending',
           kitchen_assigned_at: new Date(),
           total_amount: totalAmount,
@@ -502,7 +504,18 @@ const updateOrderStatus = async (req, res) => {
       .where('id', id)
       .update(updateData)
       .returning('*');
-    
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+  socketHandler.emitOrderStatusUpdate({
+    orderId: id,
+    orderNumber: existingOrder.order_number,
+    itemId,
+    status,
+    updatedBy: userId,
+     waiterId: existingOrder.waiter_id
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data: { order: updatedOrder[0] },
@@ -600,7 +613,14 @@ const updateOrderItemStatus = async (req, res) => {
           updated_at: new Date()
         });
     }
-    
+    if (socketHandler) {
+  socketHandler.emitOrderItemStatusUpdate({
+    orderId,
+    itemId,
+    status,
+    updatedBy: userRole
+  });
+}
     return res.status(200).json({
       success: true,
       data: { item: updatedItem[0] },
@@ -695,7 +715,6 @@ const addOrderItems = async (req, res) => {
           }
         });
       }
-      
       const quantity = parseInt(item.quantity);
       const unitPrice = parseFloat(menuItem.price);
       const itemTotal = unitPrice * quantity;
@@ -739,7 +758,19 @@ const addOrderItems = async (req, res) => {
       
       // Get updated order details
       const updatedOrder = await getOrderDetails(id);
-      
+        const socketHandler = req.app.get('socketHandler');
+      if (socketHandler) {
+        socketHandler.handleAddOrderItems({
+          orderId: id,
+          orderNumber: existingOrder.order_number,
+          tableId: existingOrder.table_id,
+          tableNumber: updatedOrder.table?.table_number,
+          waiterId: existingOrder.waiter_id,
+          customerInfo: updatedOrder.customer,
+          newItems: validatedItems,
+         
+        });
+      }
       return res.status(200).json({
         success: true,
         data: { order: updatedOrder },
