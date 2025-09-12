@@ -7,6 +7,7 @@ import PlaceOrderModal from './PlaceOrderModal';
 import { useAuth } from '../../contexts/AuthContext';
 import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
+import StatusBadge from '../common/StatusBadge';
 import {
   restaurantApi,
   restaurantTableApi,
@@ -1006,7 +1007,6 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
 
 // Reservations Tab Component
 const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelRequest, cancelingId, cancelError }) => {
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1019,9 +1019,9 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
         </button>
       </div>
 
-      {cancelError  && (
+      {cancelError && (
         <div className="mb-4 bg-red-50 border border-white rounded-md p-3 text-red-700">
-          {cancelError }
+          {cancelError}
         </div>
       )}
 
@@ -1074,14 +1074,8 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
                     {reservation.party_size}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                      reservation.status === 'seated' ? 'bg-blue-100 text-blue-800' :
-                      reservation.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {reservation.status}
-                    </span>
+                    {/* 👇 Replace old inline span with StatusBadge */}
+                    <StatusBadge status={reservation.status} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
                     <button

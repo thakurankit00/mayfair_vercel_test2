@@ -70,7 +70,7 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-20">
-    <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-4 relative">
+    <div className="bg-white rounded-lg shadow-lg w-full max-w-md md:max-w-lg lg:max-w-xl p-4 relative max-h-[90vh] overflow-y-auto">
      <button
           className="absolute top-2 right-2 text-gray-200 hover:text-gray-400"
           onClick={onClose}
@@ -178,17 +178,18 @@ const ReservationModal = ({ reservation, onClose, onSave }) => {
             </div>
 			<div>
   <label className="block text-sm font-medium text-gray-700">Status</label>
-  <select
-    name="status"
-    value={form.status}
-    onChange={handleChange}
-    className="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1 text-gray-900 text-sm bg-white"
-    required
-  >
-    <option value="pending">Pending</option>
-    <option value="confirmed">Confirmed</option>
-    <option value="cancelled">Cancelled</option>
-  </select>
+  
+    <select
+      name="status"
+      value={form.status}
+      onChange={handleChange}
+      className="block border-gray-300 rounded-md px-2 py-1 text-gray-900 text-sm bg-white"
+      required
+    >
+      <option value="pending">Pending</option>
+      <option value="confirmed">Confirmed</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
 </div>
 
 

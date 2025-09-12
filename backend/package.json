@@ -36,6 +36,7 @@
   "author": "Mayfair Hotel Development Team",
   "license": "PROPRIETARY",
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
     "agenda": "^5.0.0",
     "aws-sdk": "^2.1450.0",
     "axios": "^1.5.0",
