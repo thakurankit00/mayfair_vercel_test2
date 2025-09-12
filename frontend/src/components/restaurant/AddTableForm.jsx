@@ -47,33 +47,76 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
         throw new Error("Please select a restaurant first");
       }
 
-      // Prepare data for API
+      // Prepare data for API - only send necessary fields
       const submitData = {
-        ...formData,
+        table_number: formData.table_number.toString().trim(),
         capacity: parseInt(formData.capacity),
-        is_active: Boolean(formData.is_active),
-        restaurant_id: restaurantId
+        location: formData.location
+        // Remove is_active and restaurant_id from body as they're handled differently
       };
 
-      const response = await restaurantTableApi.createTable(restaurantId, submitData);
-      console.log("API response:", response);
+      console.log("Prepared submit data:", submitData);
 
-      // Handle successful creation
-      if (response?.data?.table || response?.table || response) {
-        const newTable = response?.data?.table || response?.table || response;
-        if (onTableAdded) {
+      // Call API
+      const response = await restaurantTableApi.createTable(restaurantId, submitData);
+      console.log("Raw API response:", response);
+
+      // Handle response more carefully
+      let newTable = null;
+      
+      if (response && typeof response === 'object') {
+        // Try different possible response structures
+        if (response.data && response.data.table) {
+          newTable = response.data.table;
+        } else if (response.table) {
+          newTable = response.table;
+        } else if (response.success && response.data) {
+          newTable = response.data;
+        } else {
+          newTable = response;
+        }
+      }
+
+      if (newTable && newTable.id) {
+        console.log("Table created successfully:", newTable);
+        
+        // Notify parent component
+        if (onTableAdded && typeof onTableAdded === 'function') {
           onTableAdded(newTable);
         }
         
-        // Reset form
+        // Reset form and close modal
         setFormData(initialForm);
+        setError("");
         onClose();
       } else {
-        throw new Error("Invalid response from server");
+        console.error("Invalid response structure:", response);
+        throw new Error("Invalid response from server - table not created properly");
       }
+
     } catch (err) {
       console.error("Error adding table:", err);
-      setError(err.response?.data?.message || err.message || "Failed to add table");
+      
+      // Handle different types of errors
+      let errorMessage = "Failed to add table";
+      
+      if (err.response) {
+        // Server responded with error
+        if (err.response.data) {
+          if (typeof err.response.data === 'string') {
+            errorMessage = err.response.data;
+          } else if (err.response.data.message) {
+            errorMessage = err.response.data.message;
+          } else if (err.response.data.error) {
+            errorMessage = err.response.data.error.message || err.response.data.error;
+          }
+        }
+        console.error("Server error response:", err.response.data);
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -117,6 +160,7 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
               className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
               disabled={isSubmitting}
+              placeholder="e.g., T01, 1, A-1"
             />
           </div>
 
@@ -132,6 +176,7 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
               className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
               disabled={isSubmitting}
+              placeholder="Number of guests"
             />
           </div>
 
@@ -154,7 +199,7 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
             <label className="block text-sm font-medium">Status</label>
             <select
               name="is_active"
-              value={String(formData.is_active)}
+              value={String(formData.is_active || true)}
               onChange={handleChange}
               className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={isSubmitting}
@@ -186,4 +231,5 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
     </div>
   );
 };
+
 export default AddTableForm;

@@ -1109,7 +1109,7 @@ const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditRe
 };
 
 // Orders Tab Component
-const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
+const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants,onPlaceOrder }) => {
   const [cancelingId, setCancelingId] = React.useState(null);
   const [cancelError, setCancelError] = React.useState(null);
   const [transferReason, setTransferReason] = React.useState('');
@@ -1151,15 +1151,7 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
       console.error('Failed to transfer order:', err);
     }
   };
-  const onPlaceOrder = () => {
-    if (!selectedRestaurant) {
-      alert("Please select a restaurant before placing an order");
-      return;
-    }
-    // TODO: integrate with API
-    console.log(`Placing new order for restaurant ${selectedRestaurant}`);
-    // Example: open a modal or redirect to order form
-  };
+  
 
   return (
   <div className="space-y-6">
@@ -1227,8 +1219,8 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
                   <div className="space-y-1">
                     {order.items?.map((item, index) => (
                       <div key={index} className="flex justify-between text-sm">
-                        <span>{item.quantity}x {item.name}</span>
-                        <span>₹{item.price * item.quantity}</span>
+                        <span>{item.quantity}x {item.item_name}</span>
+                        <span>₹{item.total_price * item.quantity}</span>
                       </div>
                     ))}
                   </div>
@@ -1269,7 +1261,6 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants }) => {
           <p className="text-gray-500 text-sm mt-1">Place your first order using the button above.</p>
         </div>
       )}
-
       {/* Transfer Modal */}
       {showTransferModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">

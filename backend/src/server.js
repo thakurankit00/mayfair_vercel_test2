@@ -25,7 +25,7 @@ const uploadRoutes =require ('./routes/upload')
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
-const upload =require('./middleware/cloudinaryUpload');
+
 
 const app = express();
 const server = createServer(app);
