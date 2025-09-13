@@ -9,7 +9,7 @@ import {
   kitchenApi
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-
+import PlaceOrderModal from '../restaurant/PlaceOrderModal';
 const WaiterOrderInterface = () => {
   const { user } = useAuth();
   const { notifications, markNotificationAsRead, emitEvent } = useSocket();
@@ -39,6 +39,7 @@ const WaiterOrderInterface = () => {
   const [activeTab, setActiveTab] = useState('new-order'); // new-order, active-orders, history
   const [showBillModal, setShowBillModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
+  const [showAddOrderModal, setShowAddOrderModal] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -252,6 +253,31 @@ const WaiterOrderInterface = () => {
       </div>
     );
   }
+  const handleAddOrderToExisting = (order) => {
+  setActiveOrder(order);             
+  setSelectedTable({ id: order.table_id, table_name: order.table_number });
+  setCart(
+  (order.items ).map(item => ({
+    id: item.id, 
+    menuItemId: item.menu_item_id,
+    name: item.item_name,
+    price: item.price || item.unit_price,
+    quantity: item.quantity,
+    specialInstructions: item.special_instructions || '',
+    
+  }))
+);
+        // pre-fill with current items
+  setCustomerInfo({
+    firstName: order.first_name || '',
+    lastName: order.last_name || '',
+    phone: order.phone || '',
+    email: order.email || ''
+  });
+  setSpecialInstructions(order.kitchen_notes || '');
+  setShowAddOrderModal(true);
+};
+
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -362,6 +388,7 @@ const WaiterOrderInterface = () => {
         <ActiveOrdersTab
           orders={currentOrders.filter(o => ['pending', 'preparing'].includes(o.status))}
           onGenerateBill={generateBill}
+           onAddOrderToExisting={handleAddOrderToExisting}
           loading={loading}
         />
       )}
@@ -372,6 +399,30 @@ const WaiterOrderInterface = () => {
           loading={loading}
         />
       )}
+      {showAddOrderModal && activeOrder && (
+  <PlaceOrderModal
+    onClose={() => setShowAddOrderModal(false)}
+    existingOrder={activeOrder}   // 👈 pre-fill data
+    selectedRestaurant={selectedRestaurant}
+    restaurants={restaurants}
+    userRole={user?.role}
+    onSave={async (updatedOrderData) => {
+      try {
+        // 🔄 update instead of creating
+        await restaurantOrderApi.updateOrder(activeOrder.id, updatedOrderData);
+
+        // refresh orders after update
+        const ordersData = await restaurantOrderApi.getOrders();
+        setCurrentOrders(ordersData.orders || []);
+
+        setShowAddOrderModal(false);
+      } catch (err) {
+        setError(err.message || "Failed to update order");
+      }
+    }}
+  />
+)}
+
 
       {/* Bill Generation Modal */}
       {showBillModal && selectedOrderForBill && (
@@ -668,7 +719,7 @@ const NewOrderTab = ({
 };
 
 // Active Orders Tab Component
-const ActiveOrdersTab = ({ orders, onGenerateBill, loading }) => {
+const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting }) => {
   return (
     <div className="space-y-4">
       {orders.map(order => (
@@ -726,6 +777,17 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading }) => {
                   Generate Bill
                 </button>
               )}
+              {['pending', 'preparing'].includes(order.status) && (
+    <button
+      onClick={() => onAddOrderToExisting(order)}
+      disabled={loading}
+      className="bg-green-600 text-white px-4 py-2 rounded  font-medium hover:bg-green-700 disabled:opacity-50"
+    >
+      + Add Order
+    </button>
+  )}
+  
+
             </div>
           </div>
         </div>
@@ -792,7 +854,7 @@ const BillModal = ({ order, onClose }) => {
   const handlePrint = () => {
     window.print();
   };
-
+    
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-96 overflow-y-auto">
@@ -877,6 +939,7 @@ const BillModal = ({ order, onClose }) => {
         </div>
       </div>
     </div>
+    
   );
 };
 

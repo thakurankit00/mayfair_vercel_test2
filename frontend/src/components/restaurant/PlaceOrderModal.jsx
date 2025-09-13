@@ -16,7 +16,6 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
     special_instructions: '',
     payment_method: 'cash'
   });
-
   // Load menu and tables on mount
   useEffect(() => {
     const loadData = async () => {

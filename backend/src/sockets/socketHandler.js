@@ -74,12 +74,22 @@ class SocketHandler {
       console.log('📝 New order submitted:', data);
       this.handleNewOrderSubmitted(data);
     });
+    socket.on('add-order-items', (data) => {
+      console.log('📝 New order submitted:', data);
+      this.handleAddOrderItems(data);
+    });
 
     socket.on('order-status-update', (data) => {
       console.log('📊 Order status update:', data);
       this.handleOrderStatusUpdate(data);
     });
+     socket.on('order-item-status-update', (data) => {
 
+      console.log('🍽️ Order item status update:', data);
+
+      this.handleOrderItemStatusUpdate(data);
+
+    });
     // Handle kitchen events
     socket.on('kitchen-order-action', (data) => {
       console.log('🍳 Kitchen order action:', data);
@@ -137,9 +147,46 @@ class SocketHandler {
       timestamp: new Date()
     });
   }
+  handleAddOrderItems(data) {
+    const {  orderId, orderNumber, tableId, tableNumber, waiterId, customerInfo, newItems, kitchenTypes   } = data;
 
+    // Notify relevant kitchen staff
+    kitchenTypes.forEach(kitchenType => {
+      const roomName = kitchenType === 'bar' ? 'kitchen-bartender' : 'kitchen-chef';
+      this.io.to(roomName).emit('order-items-added', {
+        orderId,
+        orderNumber,
+        tableNumber: data.tableNumber,
+        customerInfo,
+        kitchenType,
+        newItems,
+        timestamp: new Date()
+      });
+    });
+      if (waiterId) {
+    this.io.to(`user-${waiterId}`).emit('order-items-added', {
+      orderId,
+      orderNumber,
+      tableId,
+      tableNumber,
+      newItems,
+      timestamp: new Date()
+    });
+  }
+    // Notify managers and admins
+    this.io.to('managers').emit('order-items-added-notification', {
+      orderId,
+      orderNumber,
+      tableId,
+      waiterId,
+      timestamp: new Date()
+    });
+  }
+  
+
+  
   handleOrderStatusUpdate(data) {
-    const { orderId, orderNumber, status, userId, userRole, tableId } = data;
+    const { orderId, orderNumber, status, userId, userRole, waiterId } = data;
 
     // Notify the waiter who created the order
     if (data.waiterId) {
@@ -168,7 +215,28 @@ class SocketHandler {
       timestamp: new Date()
     });
   }
+   handleOrderItemStatusUpdate(data) {
+   const { orderId, itemId, status, updatedBy } = data;
+   // Notify waiters about item status changes
+   this.io.to('waiters').emit('order-item-status-updated', {
+     orderId,
+     itemId,
+     status,
+     updatedBy,
+     timestamp: new Date()
+    });
+    // Notify managers and admins
+    this.io.to('managers').emit('order-item-status-updated', {
+      orderId,
+      itemId,
+      status,
 
+      updatedBy,
+
+      timestamp: new Date()
+
+    });
+   }
   handleKitchenOrderAction(data) {
     const { orderId, orderNumber, action, kitchenName, estimatedTime, notes, reason, chefId, waiterId } = data;
 
