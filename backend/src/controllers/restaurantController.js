@@ -106,7 +106,7 @@ const getRestaurants = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get restaurants error:', error);
+    console.error('Get restaurants error: - restaurantController.js:109', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -125,22 +125,38 @@ const getTables = async (req, res) => {
   try {
     const { restaurantId } = req.params;
     const { location } = req.query;
-    
+
     let query = db('restaurant_tables')
-      .select('restaurant_tables.*', 'restaurants.name as restaurant_name')
+      .select(
+        'restaurant_tables.*',
+        'restaurants.name as restaurant_name',
+        db.raw(`
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.table_id = restaurant_tables.id
+              AND o.status IN ('pending', 'preparing', 'ready')
+            ) THEN 'occupied'
+            ELSE 'available'
+          END as status
+        `),
+        db.raw(`
+          CONCAT('Table ', restaurant_tables.table_number) as table_name
+        `)
+      )
       .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
       .where('restaurant_tables.is_active', true)
       .where('restaurants.is_active', true)
       .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
-    
+
     if (restaurantId && restaurantId !== 'all') {
       query = query.where('restaurant_tables.restaurant_id', restaurantId);
     }
-    
+
     if (location) {
       query = query.where('restaurant_tables.location', location);
     }
-    
+
     const tables = await query;
     
     // Add booking status for each table
@@ -171,7 +187,7 @@ const getTables = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get tables error: - restaurantController.js:109', error);
+    console.error('Get tables error: - restaurantController.js:190', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -277,7 +293,7 @@ const createTable = async (req, res) => {
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
-    console.error('Create table error: - restaurantController.js:184', error);
+    console.error('Create table error: - restaurantController.js:296', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -360,7 +376,7 @@ const updateTable = async (req, res) => {
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
-    console.error('Update table error: - restaurantController.js:254', error);
+    console.error('Update table error: - restaurantController.js:379', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -428,7 +444,7 @@ const deleteTable = async (req, res) => {
       message: 'Restaurant table deleted successfully'
     });
   } catch (error) {
-    console.error('Delete table error: - restaurantController.js:316', error);
+    console.error('Delete table error: - restaurantController.js:447', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -474,7 +490,7 @@ const getMenuCategories = async (req, res) => {
       data: { categories }
     });
   } catch (error) {
-    console.error('Get menu categories error: - restaurantController.js:355', error);
+    console.error('Get menu categories error: - restaurantController.js:493', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -547,7 +563,7 @@ const createMenuCategory = async (req, res) => {
       message: 'Menu category created successfully'
     });
   } catch (error) {
-    console.error('Create menu category error: - restaurantController.js:414', error);
+    console.error('Create menu category error: - restaurantController.js:566', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -613,7 +629,7 @@ const getMenu = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get menu error: - restaurantController.js:473', error);
+    console.error('Get menu error: - restaurantController.js:632', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -701,7 +717,7 @@ const createMenuItem = async (req, res) => {
       message: 'Menu item created successfully'
     });
   } catch (error) {
-    console.error('Create menu item error: - restaurantController.js:561', error);
+    console.error('Create menu item error: - restaurantController.js:720', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -764,7 +780,7 @@ const updateMenuItem = async (req, res) => {
       message: 'Menu item updated successfully'
     });
   } catch (error) {
-    console.error('Update menu item error: - restaurantController.js:624', error);
+    console.error('Update menu item error: - restaurantController.js:783', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -811,7 +827,7 @@ const deleteMenuItem = async (req, res) => {
       message: 'Menu item deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu item error: - restaurantController.js:671', error);
+    console.error('Delete menu item error: - restaurantController.js:830', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -875,7 +891,7 @@ const deleteMenuCategory = async (req, res) => {
       message: 'Menu category deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu category error: - restaurantController.js:720', error);
+    console.error('Delete menu category error: - restaurantController.js:894', error);
     return res.status(500).json({
       success: false,
       error: {

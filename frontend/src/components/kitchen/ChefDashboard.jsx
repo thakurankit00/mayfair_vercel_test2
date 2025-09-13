@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
-import { orderApi } from '../../services/restaurantApi';
+import { orderApi, kitchenApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 const ChefDashboard = () => {
@@ -11,6 +11,7 @@ const ChefDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updateLoading, setUpdateLoading] = useState({});
+  const [orderActionLoading, setOrderActionLoading] = useState({});
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
@@ -63,23 +64,75 @@ const ChefDashboard = () => {
     }
   }, [socket, user.id, user.role]);
 
+  // Accept order
+  const acceptOrder = async (orderId, estimatedTime = null, notes = '') => {
+    try {
+      setOrderActionLoading(prev => ({ ...prev, [orderId]: true }));
+
+      // Find the order to get its restaurant ID
+      const order = dashboardData.orders.find(o => o.id === orderId);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Use the restaurant ID from the order
+      const kitchenId = order.restaurant_id;
+
+      await kitchenApi.acceptKitchenOrder(kitchenId, orderId, estimatedTime, notes);
+
+      // Refresh dashboard data
+      await fetchDashboardData();
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to accept order');
+    } finally {
+      setOrderActionLoading(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
+  // Reject order
+  const rejectOrder = async (orderId, reason) => {
+    try {
+      setOrderActionLoading(prev => ({ ...prev, [orderId]: true }));
+
+      // Find the order to get its restaurant ID
+      const order = dashboardData.orders.find(o => o.id === orderId);
+      if (!order) {
+        throw new Error('Order not found');
+      }
+
+      // Use the restaurant ID from the order
+      const kitchenId = order.restaurant_id;
+
+      await kitchenApi.rejectKitchenOrder(kitchenId, orderId, reason);
+
+      // Refresh dashboard data
+      await fetchDashboardData();
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to reject order');
+    } finally {
+      setOrderActionLoading(prev => ({ ...prev, [orderId]: false }));
+    }
+  };
+
   // Update item status
   const updateItemStatus = async (orderId, itemId, status, chefNotes = '') => {
     try {
       setUpdateLoading(prev => ({ ...prev, [itemId]: true }));
-      
-      await orderApi.updateOrderItemStatus(orderId, itemId, { 
-        status, 
-        chef_notes: chefNotes 
+
+      await orderApi.updateOrderItemStatus(orderId, itemId, {
+        status,
+        chef_notes: chefNotes
       });
-      
+
       // Update local state immediately for better UX
       setDashboardData(prev => ({
         ...prev,
         orders: prev.orders.map(order => ({
           ...order,
-          items: order.items.map(item => 
-            item.id === itemId 
+          items: order.items.map(item =>
+            item.id === itemId
               ? { ...item, status, chefNotes, acceptedAt: status === 'accepted' ? new Date() : item.acceptedAt }
               : item
           )
@@ -212,7 +265,10 @@ const ChefDashboard = () => {
                 key={order.id}
                 order={order}
                 onUpdateItemStatus={updateItemStatus}
+                onAcceptOrder={acceptOrder}
+                onRejectOrder={rejectOrder}
                 updateLoading={updateLoading}
+                orderActionLoading={orderActionLoading}
               />
             ))
           )}
@@ -223,9 +279,14 @@ const ChefDashboard = () => {
 };
 
 // Individual Order with Items Component
-const OrderItemCard = ({ order, onUpdateItemStatus, updateLoading }) => {
+const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder, updateLoading, orderActionLoading }) => {
   const [expandedItems, setExpandedItems] = useState({});
   const [chefNotes, setChefNotes] = useState({});
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [estimatedTime, setEstimatedTime] = useState('');
+  const [acceptNotes, setAcceptNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
 
   const toggleItemExpansion = (itemId) => {
     setExpandedItems(prev => ({
@@ -299,6 +360,63 @@ const OrderItemCard = ({ order, onUpdateItemStatus, updateLoading }) => {
         </div>
       </div>
 
+      {/* Order Actions - Show only if order is pending */}
+      {order.status === 'pending' && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-yellow-800">Order Pending Kitchen Approval</p>
+              <p className="text-xs text-yellow-600">Accept or reject this order to proceed</p>
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowAcceptModal(true)}
+                disabled={orderActionLoading[order.id]}
+                className="bg-green-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                {orderActionLoading[order.id] ? 'Processing...' : 'Accept'}
+              </button>
+              <button
+                onClick={() => setShowRejectModal(true)}
+                disabled={orderActionLoading[order.id]}
+                className="bg-red-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Status Info */}
+      {order.status && order.status !== 'pending' && (
+        <div className={`mb-4 p-3 rounded-lg ${
+          order.status === 'preparing' ? 'bg-blue-50 border border-blue-200' :
+          order.status === 'cancelled' ? 'bg-red-50 border border-red-200' :
+          order.status === 'ready' ? 'bg-green-50 border border-green-200' :
+          'bg-gray-50 border border-gray-200'
+        }`}>
+          <p className={`text-sm font-medium ${
+            order.status === 'preparing' ? 'text-blue-800' :
+            order.status === 'cancelled' ? 'text-red-800' :
+            order.status === 'ready' ? 'text-green-800' :
+            'text-gray-800'
+          }`}>
+            Order {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+          </p>
+          {order.special_instructions && (
+            <p className={`text-xs mt-1 ${
+              order.status === 'preparing' ? 'text-blue-600' :
+              order.status === 'cancelled' ? 'text-red-600' :
+              order.status === 'ready' ? 'text-green-600' :
+              'text-gray-600'
+            }`}>
+              Notes: {order.special_instructions}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Special Instructions */}
       {order.specialInstructions && (
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
@@ -316,7 +434,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, updateLoading }) => {
                 <div className="flex-1">
                   <div className="flex items-center space-x-3">
                     <span className="font-medium text-gray-900">
-                      {item.quantity}x {item.name}
+                      {item.quantity}x {item.item_name || item.name}
                     </span>
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(item.status)}`}>
                       {getStatusText(item.status)}
@@ -441,6 +559,110 @@ const OrderItemCard = ({ order, onUpdateItemStatus, updateLoading }) => {
           </div>
         ))}
       </div>
+
+      {/* Accept Order Modal */}
+      {showAcceptModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Accept Order #{order.orderNumber}</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estimated Preparation Time (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={estimatedTime}
+                  onChange={(e) => setEstimatedTime(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="e.g., 15"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={acceptNotes}
+                  onChange={(e) => setAcceptNotes(e.target.value)}
+                  rows="3"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="Any special notes for the waiter..."
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex space-x-3">
+              <button
+                onClick={() => setShowAcceptModal(false)}
+                className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onAcceptOrder(order.id, estimatedTime ? parseInt(estimatedTime) : null, acceptNotes);
+                  setShowAcceptModal(false);
+                  setEstimatedTime('');
+                  setAcceptNotes('');
+                }}
+                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md font-medium hover:bg-green-700"
+              >
+                Accept Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Order Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Reject Order #{order.orderNumber}</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason for rejection *
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows="3"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="Please explain why this order cannot be fulfilled..."
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex space-x-3">
+              <button
+                onClick={() => setShowRejectModal(false)}
+                className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (rejectReason.trim()) {
+                    onRejectOrder(order.id, rejectReason);
+                    setShowRejectModal(false);
+                    setRejectReason('');
+                  }
+                }}
+                disabled={!rejectReason.trim()}
+                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                Reject Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

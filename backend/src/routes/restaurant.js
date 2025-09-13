@@ -245,6 +245,107 @@ router.delete('/kitchens/:kitchenId/staff/:userId/:role', authenticateToken, req
 // Get kitchen orders (Kitchen Staff+)
 router.get('/kitchen/:kitchenId/orders', authenticateToken, getKitchenOrders);
 
+// General kitchen dashboard (Chef/Bartender+) - doesn't require specific kitchen ID
+router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const db = require('../config/database');
+
+    // Build query for orders that need kitchen attention
+    let query = db('orders as o')
+      .select(
+        'o.*',
+        'rt.table_number',
+        'rt.location as table_location',
+        'u.first_name',
+        'u.last_name',
+        'w.first_name as waiter_first_name',
+        'w.last_name as waiter_last_name'
+      )
+      .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .join('users as u', 'o.user_id', 'u.id')
+      .leftJoin('users as w', 'o.waiter_id', 'w.id')
+      .whereIn('o.status', ['pending', 'preparing'])
+      .orderBy('o.placed_at', 'desc');
+
+    // Filter by kitchen type based on user role
+    if (userRole === 'bartender') {
+      query = query.where('o.order_type', 'bar');
+    } else if (userRole === 'chef') {
+      query = query.whereIn('o.order_type', ['restaurant', 'room_service', 'dine_in']);
+    }
+
+    const orders = await query;
+
+    // Get order items for each order
+    const ordersWithItems = await Promise.all(
+      orders.map(async (order) => {
+        const items = await db('order_items as oi')
+          .select('oi.*', 'mi.name as item_name', 'mi.description', 'mc.name as category_name')
+          .join('menu_items as mi', 'oi.menu_item_id', 'mi.id')
+          .join('menu_categories as mc', 'mi.category_id', 'mc.id')
+          .where('oi.order_id', order.id)
+          .orderBy('oi.created_at', 'asc');
+
+        return {
+          ...order,
+          items,
+          orderNumber: order.order_number || `ORD-${order.id.slice(-8)}`,
+          tableNumber: order.table_number,
+          customerName: `${order.first_name} ${order.last_name}`,
+          waiterName: order.waiter_first_name ? `${order.waiter_first_name} ${order.waiter_last_name}` : 'N/A',
+          placedAt: order.placed_at,
+          orderType: order.order_type
+        };
+      })
+    );
+
+    // Calculate stats
+    const stats = {
+      totalPendingItems: 0,
+      totalAcceptedItems: 0,
+      totalPreparingItems: 0,
+      totalOrders: ordersWithItems.length
+    };
+
+    ordersWithItems.forEach(order => {
+      if (order.items) {
+        order.items.forEach(item => {
+          switch (item.status) {
+            case 'pending':
+              stats.totalPendingItems++;
+              break;
+            case 'accepted':
+              stats.totalAcceptedItems++;
+              break;
+            case 'preparing':
+              stats.totalPreparingItems++;
+              break;
+          }
+        });
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        orders: ordersWithItems,
+        stats
+      }
+    });
+    
+  } catch (error) {
+    console.error('Kitchen dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'DATABASE_ERROR',
+        message: 'Failed to fetch kitchen dashboard data'
+      }
+    });
+  }
+});
+
 /**
  * @swagger
  * /api/v1/restaurant/kitchen/{kitchenId}/orders/{orderId}/accept:
