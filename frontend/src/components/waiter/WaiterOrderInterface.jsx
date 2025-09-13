@@ -8,7 +8,6 @@ import {
   restaurantOrderApi
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-import PlaceOrderModal from '../restaurant/PlaceOrderModal';
 const WaiterOrderInterface = () => {
   const { user } = useAuth();
   const { notifications, markNotificationAsRead, emitEvent } = useSocket();
@@ -38,16 +37,25 @@ const WaiterOrderInterface = () => {
   const [activeTab, setActiveTab] = useState('new-order'); // new-order, active-orders, history
   const [showBillModal, setShowBillModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
-  const [showAddOrderModal, setShowAddOrderModal] = useState(false);
 
   // Load initial data
   useEffect(() => {
     const loadInitialData = async () => {
       try {
         setLoading(true);
+        
+        // Build order filters based on user role
+        const orderFilters = {};
+        
+        // If user is a waiter, only show their orders
+        // Admin and manager can see all orders
+        if (user.role === 'waiter') {
+          orderFilters.waiter_id = user.id;
+        }
+        
         const [restaurantsData, ordersData] = await Promise.all([
           restaurantApi.getRestaurants(),
-          restaurantOrderApi.getOrders()
+          restaurantOrderApi.getOrders(orderFilters)
         ]);
         
         setRestaurants(restaurantsData.restaurants || []);
@@ -64,7 +72,59 @@ const WaiterOrderInterface = () => {
     };
 
     loadInitialData();
-  }, []);
+  }, [user.id, user.role]);
+
+  // Socket listener for item status updates
+  const { socket } = useSocket();
+
+  useEffect(() => {
+    if (socket) {
+      const handleItemStatusUpdate = (data) => {
+        const { orderId, orderNumber, itemId, status } = data;
+
+        // Show notification for ready items
+        if (status === 'ready' || status === 'ready_to_serve') {
+          // Create a notification
+          const notification = {
+            id: `item-ready-${itemId}-${Date.now()}`,
+            type: 'success',
+            title: 'Item Ready!',
+            message: `Item in Order #${orderNumber} is ready for pickup`,
+            timestamp: new Date(),
+            orderId,
+            itemId
+          };
+
+          // You can add this to a notifications state or show a toast
+          console.log('Item ready notification:', notification);
+
+          // Refresh current orders to show updated status
+          if (currentOrders.some(order => order.id === orderId)) {
+            // Reload orders to get updated status
+            const loadOrders = async () => {
+              try {
+                const orderFilters = { status: ['pending', 'preparing', 'ready'] };
+                if (user.role === 'waiter') {
+                  orderFilters.waiter_id = user.id;
+                }
+                const ordersData = await restaurantOrderApi.getOrders(orderFilters);
+                setCurrentOrders(ordersData.orders || []);
+              } catch (err) {
+                console.error('Failed to refresh orders:', err);
+              }
+            };
+            loadOrders();
+          }
+        }
+      };
+
+      socket.on('order-item-status-updated', handleItemStatusUpdate);
+
+      return () => {
+        socket.off('order-item-status-updated', handleItemStatusUpdate);
+      };
+    }
+  }, [socket, currentOrders, user.id, user.role]);
 
   // Load restaurant-specific data
   useEffect(() => {
@@ -156,11 +216,16 @@ const WaiterOrderInterface = () => {
       
       // Group items by kitchen type for proper routing
       const kitchenGroups = cart.reduce((groups, item) => {
-        const kitchen = item.kitchenType;
+        const kitchen = item.kitchenType || 'restaurant';
         if (!groups[kitchen]) groups[kitchen] = [];
         groups[kitchen].push(item);
         return groups;
       }, {});
+
+      // Ensure kitchenGroups has at least one entry
+      if (Object.keys(kitchenGroups).length === 0) {
+        kitchenGroups['restaurant'] = [];
+      }
 
       // Check if this is adding items to an existing order
       const isExistingOrder = activeOrder.latestOrderId || (activeOrder.rounds && activeOrder.rounds[0]?.orderId);
@@ -202,10 +267,11 @@ const WaiterOrderInterface = () => {
       } else {
         // Create new order
         const orderData = {
-          restaurantId: selectedRestaurant,
-          tableId: selectedTable.id,
+          restaurant_id: selectedRestaurant,
+          table_id: selectedTable.id,
+          order_type: 'dine_in', // Default to dine_in for waiter orders
           customerInfo,
-          specialInstructions,
+          special_instructions: specialInstructions,
           items: cart.map(item => ({
             menuItemId: item.menuItemId,
             quantity: item.quantity,
@@ -247,10 +313,16 @@ const WaiterOrderInterface = () => {
       
       // Clear current cart but keep order session active
       setCart([]);
-      
+
       // Refresh current orders list
       const ordersData = await restaurantOrderApi.getOrders();
       setCurrentOrders(ordersData.orders || []);
+
+      // Refresh tables to update status (available -> has orders)
+      if (selectedRestaurant) {
+        const tablesData = await restaurantTableApi.getTables(selectedRestaurant);
+        setTables(tablesData.tables || []);
+      }
 
     } catch (err) {
       setError(err.message || 'Failed to submit order');
@@ -292,35 +364,77 @@ const WaiterOrderInterface = () => {
       </div>
     );
   }
-  const handleAddOrderToExisting = (order) => {
-    setActiveOrder({
-      ...order,
-      tableId: order.table_id,
-      tableName: `Table ${order.table_number}`,
-      restaurantId: selectedRestaurant,
-      rounds: [{
-        id: 1,
-        items: order.items || [],
-        timestamp: new Date(order.placed_at),
-        status: 'submitted',
-        orderId: order.id,
-        orderNumber: order.order_number
-      }]
-    });             
-    setSelectedTable({ id: order.table_id, table_name: `Table ${order.table_number}` });
-    
-    // Start with empty cart for new items to be added
-    setCart([]);
-    
-    // Pre-fill customer information
-    setCustomerInfo({
-      firstName: order.first_name || '',
-      lastName: order.last_name || '',
-      phone: order.phone || '',
-      email: order.email || ''
-    });
-    setSpecialInstructions('');
-    setShowAddOrderModal(false); // Don't show modal, let them add items directly
+  const handleAddOrderToExisting = async (order) => {
+    try {
+      setLoading(true);
+
+      // Fetch full order details with items
+      const fullOrderData = await restaurantOrderApi.getOrderById(order.id);
+      const fullOrder = fullOrderData.order || fullOrderData;
+
+      // Determine the restaurant ID for this order
+      const orderRestaurantId = fullOrder.restaurant_id || order.restaurant_id;
+
+      // Set the selected restaurant and load its data
+      if (orderRestaurantId && orderRestaurantId !== selectedRestaurant) {
+        setSelectedRestaurant(orderRestaurantId);
+
+        // Load restaurant-specific data (tables and menu)
+        try {
+          const [tablesData, menuData] = await Promise.all([
+            restaurantTableApi.getTables(orderRestaurantId),
+            restaurantMenuApi.getMenu(orderRestaurantId)
+          ]);
+
+          setTables(tablesData.tables || []);
+          setMenu(menuData.menu || []);
+        } catch (err) {
+          console.error('Failed to load restaurant data:', err);
+        }
+      }
+
+      // Set up the active order with existing items
+      setActiveOrder({
+        ...fullOrder,
+        tableId: fullOrder.table_id || order.table_id,
+        tableName: `Table ${fullOrder.table_number || order.table_number}`,
+        restaurantId: orderRestaurantId,
+        latestOrderId: fullOrder.id || order.id,
+        rounds: [{
+          id: 1,
+          items: fullOrder.items || order.items || [],
+          timestamp: new Date(fullOrder.placed_at || order.placed_at),
+          status: 'submitted',
+          orderId: fullOrder.id || order.id,
+          orderNumber: fullOrder.order_number || order.order_number
+        }]
+      });
+
+      setSelectedTable({
+        id: fullOrder.table_id || order.table_id,
+        table_name: `Table ${fullOrder.table_number || order.table_number}`
+      });
+
+      // Start with empty cart for new items to be added
+      setCart([]);
+
+      // Pre-fill customer information
+      setCustomerInfo({
+        firstName: fullOrder.first_name || order.first_name || '',
+        lastName: fullOrder.last_name || order.last_name || '',
+        phone: fullOrder.phone || order.phone || '',
+        email: fullOrder.email || order.email || ''
+      });
+      setSpecialInstructions('');
+
+      // Switch to new-order tab to show the form
+      setActiveTab('new-order');
+
+    } catch (err) {
+      setError(`Failed to load order details: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
 
@@ -440,33 +554,11 @@ const WaiterOrderInterface = () => {
 
       {activeTab === 'history' && (
         <OrderHistoryTab
-          orders={currentOrders.filter(o => ['ready', 'served', 'paid'].includes(o.status))}
+          orders={currentOrders.filter(o => ['ready', 'served', 'completed', 'paid', 'cancelled'].includes(o.status))}
           loading={loading}
+          userRole={user.role}
         />
       )}
-      {showAddOrderModal && activeOrder && (
-  <PlaceOrderModal
-    onClose={() => setShowAddOrderModal(false)}
-    existingOrder={activeOrder}   // 👈 pre-fill data
-    selectedRestaurant={selectedRestaurant}
-    restaurants={restaurants}
-    userRole={user?.role}
-    onSave={async (updatedOrderData) => {
-      try {
-        // 🔄 update instead of creating
-        await restaurantOrderApi.updateOrder(activeOrder.id, updatedOrderData);
-
-        // refresh orders after update
-        const ordersData = await restaurantOrderApi.getOrders();
-        setCurrentOrders(ordersData.orders || []);
-
-        setShowAddOrderModal(false);
-      } catch (err) {
-        setError(err.message || "Failed to update order");
-      }
-    }}
-  />
-)}
 
 
       {/* Bill Generation Modal */}
@@ -527,18 +619,30 @@ const NewOrderTab = ({
                 <button
                   key={table.id}
                   onClick={() => onStartNewOrder(table)}
-                  disabled={table.status !== 'available'}
                   className={`p-3 rounded-lg text-sm font-medium transition-colors ${
                     activeOrder?.tableId === table.id
                       ? 'bg-blue-100 text-blue-800 border-2 border-blue-500'
                       : table.status === 'available'
                         ? 'bg-green-50 text-green-800 border border-green-200 hover:bg-green-100'
-                        : 'bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed'
+                        : table.status === 'occupied'
+                        ? 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
+                        : 'bg-gray-100 text-gray-500 border border-gray-200'
                   }`}
                 >
-                  <div>{table.table_name}</div>
+                  <div className="font-medium">
+                    {table.table_name || `Table ${table.table_number}`}
+                  </div>
                   <div className="text-xs">{table.capacity} seats</div>
-                  <div className="text-xs">{table.location}</div>
+                  <div className="text-xs capitalize">{table.location}</div>
+                  <div className="text-xs mt-1">
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      table.status === 'available'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {table.status === 'available' ? 'Available' : 'Has Orders'}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -713,7 +817,9 @@ const NewOrderTab = ({
                       disabled={loading || cart.length === 0}
                       className="w-full bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 disabled:opacity-50"
                     >
-                      {loading ? 'Submitting...' : 'Submit Round to Kitchen'}
+                      {loading ? 'Submitting...' : 
+                        (activeOrder.rounds[0]?.orderId ? 'Add Items to Order' : 'Submit Round to Kitchen')
+                      }
                     </button>
                     
                     <button
@@ -733,26 +839,49 @@ const NewOrderTab = ({
               </div>
             )}
 
-            {/* Previous Rounds Summary */}
-            {activeOrder.rounds.length > 1 && (
+            {/* Previous Rounds / Existing Items Summary */}
+            {activeOrder.rounds.length > 0 && activeOrder.rounds[0].status === 'submitted' && (
               <div className="mt-6 pt-4 border-t border-gray-200">
-                <h4 className="font-medium text-gray-900 mb-2">Previous Rounds</h4>
+                <h4 className="font-medium text-gray-900 mb-2">
+                  {activeOrder.rounds[0].orderId ? 'Existing Order Items' : 'Previous Rounds'}
+                </h4>
                 <div className="space-y-2">
-                  {activeOrder.rounds.slice(0, -1).map(round => (
-                    <div key={round.id} className="text-sm p-2 bg-gray-50 rounded">
-                      <div className="flex items-center justify-between">
-                        <span>Round {round.id}</span>
+                  {activeOrder.rounds.filter(round => round.status === 'submitted').map(round => (
+                    <div key={round.id} className="text-sm p-3 bg-gray-50 rounded border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium">
+                          {round.orderId ? `Order #${round.orderNumber}` : `Round ${round.id}`}
+                        </span>
                         <span className={`px-2 py-1 rounded text-xs ${
                           round.status === 'submitted' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                         }`}>
                           {round.status}
                         </span>
                       </div>
-                      {round.orderNumber && (
-                        <div className="text-xs text-gray-600">Order #{round.orderNumber}</div>
+                      
+                      {/* Show items in this round/order */}
+                      {round.items && round.items.length > 0 && (
+                        <div className="space-y-1">
+                          {round.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between text-xs text-gray-600 bg-white p-2 rounded">
+                              <span>{item.quantity}x {item.item_name || item.name}</span>
+                              <span>₹{((item.unit_price || item.price || 0) * item.quantity).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
+                      
+                      <div className="text-xs text-gray-500 mt-2">
+                        {new Date(round.timestamp).toLocaleString()}
+                      </div>
                     </div>
                   ))}
+                </div>
+                
+                <div className="mt-3 p-2 bg-blue-50 rounded">
+                  <p className="text-sm text-blue-800">
+                    💡 You're adding items to an existing order. New items will be sent to the kitchen as a separate round.
+                  </p>
                 </div>
               </div>
             )}
@@ -783,12 +912,13 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
                   {order.status}
                 </span>
                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  order.kitchen_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  order.kitchen_status === 'accepted' ? 'bg-blue-100 text-blue-800' :
-                  order.kitchen_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                  order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                  order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                  order.status === 'ready' ? 'bg-green-100 text-green-800' :
+                  order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  Kitchen: {order.kitchen_status}
+                  Kitchen: {order.status}
                 </span>
               </div>
               
@@ -808,6 +938,32 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
                 <div className="mb-4 p-3 bg-blue-50 rounded-lg">
                   <span className="font-medium text-blue-900">Kitchen Notes:</span>
                   <p className="text-blue-800">{order.kitchen_notes}</p>
+                </div>
+              )}
+              
+              {/* Order Items */}
+              {order.items && order.items.length > 0 && (
+                <div className="mb-4">
+                  <h5 className="font-medium text-gray-900 mb-2">Order Items:</h5>
+                  <div className="space-y-1">
+                    {order.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                        <span>{item.quantity}x {item.item_name || item.name}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-2 py-1 text-xs rounded ${
+                            item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            item.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                            item.status === 'ready' ? 'bg-green-100 text-green-800' :
+                            item.status === 'served' ? 'bg-gray-100 text-gray-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {item.status || 'pending'}
+                          </span>
+                          <span>₹{(item.unit_price * item.quantity).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -849,9 +1005,24 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
 };
 
 // Order History Tab Component  
-const OrderHistoryTab = ({ orders, loading }) => {
+const OrderHistoryTab = ({ orders, loading, userRole }) => {
   return (
     <div className="space-y-4">
+      {/* Header with context */}
+      <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Order History</h3>
+        <p className="text-sm text-gray-600">
+          {userRole === 'waiter' 
+            ? 'Showing your completed orders as a waiter.'
+            : userRole === 'admin' 
+            ? 'Showing all completed orders from all waiters.'
+            : 'Showing completed orders you have access to.'
+          }
+        </p>
+        <div className="flex items-center space-x-4 mt-2 text-sm">
+          <span className="text-gray-600">Total: <strong>{orders.length}</strong> orders</span>
+        </div>
+      </div>
       {orders.map(order => (
         <div key={order.id} className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-3">
@@ -867,7 +1038,7 @@ const OrderHistoryTab = ({ orders, loading }) => {
             </span>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
             <div>
               <span className="font-medium">Customer:</span> {order.first_name} {order.last_name}
             </div>
@@ -875,12 +1046,34 @@ const OrderHistoryTab = ({ orders, loading }) => {
               <span className="font-medium">Table:</span> {order.table_number}
             </div>
             <div>
-              <span className="font-medium">Total:</span> ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}
+              <span className="font-medium">Total:</span> ₹{parseFloat((order.total_amount || 0) + (order.tax_amount || 0)).toFixed(2)}
             </div>
             <div>
-              <span className="font-medium">Date:</span> {new Date(order.placed_at).toLocaleDateString()}
+              <span className="font-medium">Date:</span> {new Date(order.placed_at || order.created_at).toLocaleDateString()}
             </div>
           </div>
+          
+          {/* Waiter info for admin view */}
+          {userRole === 'admin' && (order.waiter_first_name || order.waiter_last_name) && (
+            <div className="mb-3 text-sm text-gray-600">
+              <span className="font-medium">Served by:</span> {order.waiter_first_name} {order.waiter_last_name}
+            </div>
+          )}
+          
+          {/* Order Items for History */}
+          {order.items && order.items.length > 0 && (
+            <div className="mt-3">
+              <h5 className="font-medium text-gray-900 mb-2">Items Ordered:</h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {order.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                    <span>{item.quantity}x {item.item_name || item.name}</span>
+                    <span>₹{((item.unit_price || item.price) * item.quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ))}
       

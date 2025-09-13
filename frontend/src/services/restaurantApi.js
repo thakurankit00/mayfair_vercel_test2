@@ -395,6 +395,12 @@ export const restaurantOrderApi = {
     return response.data.data;
   },
 
+  // Alias for addOrderItems
+  addItemsToOrder: async (id, itemData) => {
+    const response = await api.post(`/restaurant/orders/${id}/items`, itemData);
+    return response.data.data;
+  },
+
   // Generate bill for order
   generateBill: async (orderId) => {
     const response = await api.post(`/restaurant/orders/${orderId}/bill`);

@@ -124,24 +124,40 @@ const getTables = async (req, res) => {
   try {
     const { restaurantId } = req.params;
     const { location } = req.query;
-    
+
     let query = db('restaurant_tables')
-      .select('restaurant_tables.*', 'restaurants.name as restaurant_name')
+      .select(
+        'restaurant_tables.*',
+        'restaurants.name as restaurant_name',
+        db.raw(`
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.table_id = restaurant_tables.id
+              AND o.status IN ('pending', 'preparing', 'ready')
+            ) THEN 'occupied'
+            ELSE 'available'
+          END as status
+        `),
+        db.raw(`
+          CONCAT('Table ', restaurant_tables.table_number) as table_name
+        `)
+      )
       .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
       .where('restaurant_tables.is_active', true)
       .where('restaurants.is_active', true)
       .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
-    
+
     if (restaurantId && restaurantId !== 'all') {
       query = query.where('restaurant_tables.restaurant_id', restaurantId);
     }
-    
+
     if (location) {
       query = query.where('restaurant_tables.location', location);
     }
-    
+
     const tables = await query;
-    
+
     return res.status(200).json({
       success: true,
       data: {
