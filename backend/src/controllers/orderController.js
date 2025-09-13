@@ -133,17 +133,20 @@ const createOrder = async (req, res) => {
     const validatedItems = [];
     
     for (const item of items) {
+      // Handle both menuItemId (frontend) and menu_item_id (backend) field names
+      const menuItemId = item.menuItemId || item.menu_item_id;
+
       const menuItem = await db('menu_items')
-        .where('id', item.menu_item_id)
+        .where('id', menuItemId)
         .where('is_available', true)
         .first();
-      
+
       if (!menuItem) {
         return res.status(404).json({
           success: false,
           error: {
             code: 'MENU_ITEM_NOT_FOUND',
-            message: `Menu item not found or unavailable: ${item.menu_item_id}`
+            message: `Menu item not found or unavailable: ${menuItemId}`
           }
         });
       }
@@ -153,11 +156,11 @@ const createOrder = async (req, res) => {
       const itemTotal = unitPrice * quantity;
       
       validatedItems.push({
-        menu_item_id: item.menu_item_id,
+        menu_item_id: menuItemId,
         quantity,
         unit_price: unitPrice,
         total_price: itemTotal,
-        special_instructions: item.special_instructions || null
+        special_instructions: item.specialInstructions || item.special_instructions || null
       });
       
       totalAmount += itemTotal;
@@ -280,7 +283,7 @@ const getOrders = async (req, res) => {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
-    const { status, order_type, table_id, date_from, date_to } = req.query;
+    const { status, order_type, table_id, date_from, date_to, waiter_id } = req.query;
     
     let query = db('orders as o')
       .select(
@@ -303,6 +306,7 @@ const getOrders = async (req, res) => {
         query = query.where('o.user_id', userId);
         break;
       case 'waiter':
+        // Waiters can only see their own orders
         query = query.where('o.waiter_id', userId);
         break;
       case 'chef':
@@ -311,7 +315,14 @@ const getOrders = async (req, res) => {
       case 'bartender':
         query = query.where('o.order_type', 'bar');
         break;
-      // managers and admins can see all orders
+      case 'admin':
+      case 'manager':
+        // Admins and managers can see all orders, but can filter by waiter_id if provided
+        if (waiter_id) {
+          query = query.where('o.waiter_id', waiter_id);
+        }
+        break;
+      // Default: no additional filtering for other roles
     }
     
     // Apply filters
@@ -580,31 +591,30 @@ const updateOrderItemStatus = async (req, res) => {
       });
     }
     
+    // Map frontend status to database enum values
+    let dbStatus = status;
+    if (status === 'accepted') {
+      dbStatus = 'preparing'; // Map 'accepted' to 'preparing'
+    } else if (status === 'ready_to_serve') {
+      dbStatus = 'ready'; // Map 'ready_to_serve' to 'ready'
+    }
+
     // Update item status with proper timestamps
     const updateData = {
-      status,
+      status: dbStatus,
       updated_at: new Date()
     };
-    
-    if (status === 'accepted') {
-      updateData.accepted_at = new Date();
-      updateData.accepted_by = userId;
+
+    if (status === 'accepted' || status === 'preparing') {
+      updateData.started_at = new Date();
     }
-    
-    if (status === 'preparing') {
-      updateData.started_preparing_at = new Date();
-      if (!existingItem.accepted_at) {
-        updateData.accepted_at = new Date();
-        updateData.accepted_by = userId;
-      }
+
+    if (status === 'ready_to_serve' || status === 'ready') {
+      updateData.completed_at = new Date();
     }
-    
-    if (status === 'ready_to_serve') {
-      updateData.ready_at = new Date();
-    }
-    
+
     if (chef_notes) {
-      updateData.chef_notes = chef_notes;
+      updateData.special_instructions = chef_notes; // Store chef notes in special_instructions for now
     }
     
     const updatedItem = await db('order_items')
@@ -711,8 +721,11 @@ const addOrderItems = async (req, res) => {
     const validatedItems = [];
     
     for (const item of items) {
+      // Handle both menuItemId (frontend) and menu_item_id (backend) field names
+      const menuItemId = item.menuItemId || item.menu_item_id;
+
       const menuItem = await db('menu_items')
-        .where('id', item.menu_item_id)
+        .where('id', menuItemId)
         .where('is_available', true)
         .first();
       
@@ -721,22 +734,22 @@ const addOrderItems = async (req, res) => {
           success: false,
           error: {
             code: 'MENU_ITEM_NOT_FOUND',
-            message: `Menu item not found: ${item.menu_item_id}`
+            message: `Menu item not found: ${menuItemId}`
           }
         });
       }
       const quantity = parseInt(item.quantity);
       const unitPrice = parseFloat(menuItem.price);
       const itemTotal = unitPrice * quantity;
-      
+
       validatedItems.push({
         id: uuidv4(),
         order_id: id,
-        menu_item_id: item.menu_item_id,
+        menu_item_id: menuItemId,
         quantity,
         unit_price: unitPrice,
         total_price: itemTotal,
-        special_instructions: item.special_instructions || null,
+        special_instructions: item.specialInstructions || item.special_instructions || null,
         status: 'pending',
         created_at: new Date(),
         updated_at: new Date()
@@ -768,7 +781,14 @@ const addOrderItems = async (req, res) => {
       
       // Get updated order details
       const updatedOrder = await getOrderDetails(id);
-        const socketHandler = req.app.get('socketHandler');
+
+      // Determine kitchen types from the new items
+      const kitchenTypes = [...new Set(validatedItems.map(item => {
+        // Default to 'restaurant' if no kitchen type specified
+        return item.kitchenType || 'restaurant';
+      }))];
+
+      const socketHandler = req.app.get('socketHandler');
       if (socketHandler) {
         socketHandler.handleAddOrderItems({
           orderId: id,
@@ -778,7 +798,7 @@ const addOrderItems = async (req, res) => {
           waiterId: existingOrder.waiter_id,
           customerInfo: updatedOrder.customer,
           newItems: validatedItems,
-         
+          kitchenTypes: kitchenTypes
         });
       }
       return res.status(200).json({
@@ -973,25 +993,24 @@ const acceptKitchenOrder = async (req, res) => {
     // Get the order
     const order = await db('orders')
       .where('id', orderId)
-      .where('target_kitchen_id', kitchenId)
       .first();
-    
+
     if (!order) {
       return res.status(404).json({
         success: false,
         error: {
           code: 'ORDER_NOT_FOUND',
-          message: 'Order not found in this kitchen'
+          message: 'Order not found'
         }
       });
     }
-    
-    if (order.kitchen_status !== 'pending') {
+
+    if (order.status !== 'pending') {
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_STATUS',
-          message: `Order is already ${order.kitchen_status}`
+          message: `Order is already ${order.status}`
         }
       });
     }
@@ -1002,14 +1021,18 @@ const acceptKitchenOrder = async (req, res) => {
     try {
       // Update order status
       const updateData = {
-        kitchen_status: 'accepted',
-        kitchen_accepted_at: new Date(),
-        kitchen_notes: notes || null,
+        status: 'preparing', // Move order to preparing status when accepted by kitchen
+        started_at: new Date(),
         updated_at: new Date()
       };
-      
+
       if (estimated_time) {
         updateData.estimated_preparation_time = parseInt(estimated_time);
+      }
+
+      if (notes) {
+        updateData.special_instructions = (updateData.special_instructions || '') +
+          (updateData.special_instructions ? '\n\nKitchen Notes: ' : 'Kitchen Notes: ') + notes;
       }
       
       await trx('orders')
@@ -1115,7 +1138,6 @@ const rejectKitchenOrder = async (req, res) => {
     // Get the order
     const order = await db('orders')
       .where('id', orderId)
-      .where('target_kitchen_id', kitchenId)
       .first();
     
     if (!order) {
@@ -1128,12 +1150,12 @@ const rejectKitchenOrder = async (req, res) => {
       });
     }
     
-    if (!['pending', 'accepted'].includes(order.kitchen_status)) {
+    if (!['pending', 'preparing'].includes(order.status)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_STATUS',
-          message: `Cannot reject order with status ${order.kitchen_status}`
+          message: `Cannot reject order with status ${order.status}`
         }
       });
     }
@@ -1146,9 +1168,9 @@ const rejectKitchenOrder = async (req, res) => {
       await trx('orders')
         .where('id', orderId)
         .update({
-          kitchen_status: 'rejected',
-          kitchen_rejected_at: new Date(),
-          kitchen_notes: reason,
+          status: 'cancelled', // Mark order as cancelled when rejected by kitchen
+          special_instructions: (order.special_instructions || '') +
+            (order.special_instructions ? '\n\nKitchen Rejection: ' : 'Kitchen Rejection: ') + reason,
           updated_at: new Date()
         });
       

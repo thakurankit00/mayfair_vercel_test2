@@ -10,6 +10,7 @@ import Dashboard from './components/dashboard/Dashboard';
 import RoomsPage from './components/rooms/RoomsPage';
 import RestaurantPage from './components/restaurant/RestaurantPage';
 import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
+import ChefDashboard from './components/kitchen/ChefDashboard';
 import UserManagement from './components/admin/UserManagement';
 import OrdersPage from './components/orders/OrdersPage';
 
@@ -104,15 +105,27 @@ const App = () => {
               />
               
               {/* Waiter Interface */}
-              <Route 
-                path="/waiter" 
+              <Route
+                path="/waiter"
                 element={
                   <ProtectedRoute roles={['waiter', 'manager', 'admin']}>
                     <Layout>
                       <WaiterOrderInterface />
                     </Layout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              {/* Chef Dashboard */}
+              <Route
+                path="/kitchen"
+                element={
+                  <ProtectedRoute roles={['chef', 'bartender', 'manager', 'admin']}>
+                    <Layout>
+                      <ChefDashboard />
+                    </Layout>
+                  </ProtectedRoute>
+                }
               />
 
               {/* Bookings routes */}

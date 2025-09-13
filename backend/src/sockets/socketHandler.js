@@ -146,12 +146,13 @@ class SocketHandler {
     const {  orderId, orderNumber, tableId, tableNumber, waiterId, customerInfo, newItems, kitchenTypes   } = data;
 
     // Notify relevant kitchen staff
-    kitchenTypes.forEach(kitchenType => {
+    const safeKitchenTypes = kitchenTypes || ['restaurant'];
+    safeKitchenTypes.forEach(kitchenType => {
       const roomName = kitchenType === 'bar' ? 'kitchen-bartender' : 'kitchen-chef';
       this.io.to(roomName).emit('order-items-added', {
         orderId,
         orderNumber,
-        tableNumber: data.tableNumber,
+        tableNumber: tableNumber || data.tableNumber,
         customerInfo,
         kitchenType,
         newItems,
