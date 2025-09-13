@@ -376,8 +376,16 @@ export const restaurantOrderApi = {
   },
 
   // Update order item status
-  updateOrderItemStatus: async (orderId, itemId, status) => {
-    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}/status`, { status });
+  updateOrderItemStatus: async (orderId, itemId, statusData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}/status`, statusData);
+    return response.data.data;
+  },
+
+  // Get kitchen dashboard data
+  getKitchenDashboard: async (restaurantId = null) => {
+    const params = {};
+    if (restaurantId) params.restaurant_id = restaurantId;
+    const response = await api.get('/restaurant/kitchen/dashboard', { params });
     return response.data.data;
   },
 
@@ -393,3 +401,6 @@ export const restaurantOrderApi = {
     return response.data.data;
   }
 };
+
+// Export order API with alias for easier imports
+export const orderApi = restaurantOrderApi;

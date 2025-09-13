@@ -210,28 +210,91 @@ class SocketHandler {
       timestamp: new Date()
     });
   }
-   handleOrderItemStatusUpdate(data) {
-   const { orderId, itemId, status, updatedBy } = data;
-   // Notify waiters about item status changes
-   this.io.to('waiters').emit('order-item-status-updated', {
-     orderId,
-     itemId,
-     status,
-     updatedBy,
-     timestamp: new Date()
+  handleOrderItemStatusUpdate(data) {
+    const { 
+      orderId, 
+      orderNumber, 
+      itemId, 
+      status, 
+      chefNotes,
+      updatedBy, 
+      updatedByRole, 
+      waiterId, 
+      customerId 
+    } = data;
+
+    // Notify the specific waiter who created the order
+    if (waiterId) {
+      this.io.to(`user-${waiterId}`).emit('order-item-status-updated', {
+        orderId,
+        orderNumber,
+        itemId,
+        status,
+        chefNotes,
+        updatedBy,
+        updatedByRole,
+        timestamp: new Date()
+      });
+    }
+
+    // Notify the customer if applicable
+    if (customerId) {
+      this.io.to(`user-${customerId}`).emit('order-item-status-updated', {
+        orderId,
+        orderNumber,
+        itemId,
+        status,
+        timestamp: new Date()
+      });
+    }
+
+    // Notify all waiters about item status changes
+    this.io.to('waiters').emit('order-item-status-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      status,
+      chefNotes,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
     });
+
+    // Notify all kitchen staff for coordination
+    this.io.to('kitchen-chef').emit('order-item-status-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      status,
+      chefNotes,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    this.io.to('kitchen-bartender').emit('order-item-status-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      status,
+      chefNotes,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
     // Notify managers and admins
     this.io.to('managers').emit('order-item-status-updated', {
       orderId,
+      orderNumber,
       itemId,
       status,
-
+      chefNotes,
       updatedBy,
-
+      updatedByRole,
       timestamp: new Date()
-
     });
-   }
+  }
   handleKitchenOrderAction(data) {
     const { orderId, orderNumber, action, kitchenName, estimatedTime, notes, reason, chefId, waiterId } = data;
 
@@ -301,6 +364,10 @@ class SocketHandler {
 
   emitOrderStatusUpdate(statusData) {
     this.handleOrderStatusUpdate(statusData);
+  }
+
+  emitOrderItemStatusUpdate(itemStatusData) {
+    this.handleOrderItemStatusUpdate(itemStatusData);
   }
 
   emitKitchenOrderAction(actionData) {

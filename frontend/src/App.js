@@ -10,6 +10,8 @@ import Dashboard from './components/dashboard/Dashboard';
 import RoomsPage from './components/rooms/RoomsPage';
 import RestaurantPage from './components/restaurant/RestaurantPage';
 import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
+import UserManagement from './components/admin/UserManagement';
+import OrdersPage from './components/orders/OrdersPage';
 
 // Placeholder components for routes that aren't built yet
 const PlaceholderPage = ({ title }) => (
@@ -95,7 +97,7 @@ const App = () => {
                 element={
                   <ProtectedRoute roles={['waiter', 'chef', 'bartender', 'manager', 'admin']}>
                     <Layout>
-                      <PlaceholderPage title="Order Management" />
+                      <OrdersPage />
                     </Layout>
                   </ProtectedRoute>
                 } 
@@ -143,7 +145,7 @@ const App = () => {
                 element={
                   <ProtectedRoute roles={['admin']}>
                     <Layout>
-                      <PlaceholderPage title="User Management" />
+                      <UserManagement />
                     </Layout>
                   </ProtectedRoute>
                 } 

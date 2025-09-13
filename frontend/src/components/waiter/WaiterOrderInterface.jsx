@@ -5,8 +5,7 @@ import {
   restaurantApi, 
   restaurantTableApi, 
   restaurantMenuApi, 
-  restaurantOrderApi,
-  kitchenApi
+  restaurantOrderApi
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 import PlaceOrderModal from '../restaurant/PlaceOrderModal';
@@ -163,52 +162,92 @@ const WaiterOrderInterface = () => {
         return groups;
       }, {});
 
-      const orderData = {
-        restaurantId: selectedRestaurant,
-        tableId: selectedTable.id,
-        customerInfo,
-        specialInstructions,
-        items: cart.map(item => ({
+      // Check if this is adding items to an existing order
+      const isExistingOrder = activeOrder.latestOrderId || (activeOrder.rounds && activeOrder.rounds[0]?.orderId);
+      
+      if (isExistingOrder) {
+        // Add items to existing order
+        const existingOrderId = activeOrder.latestOrderId || activeOrder.rounds[0].orderId;
+        const newItems = cart.map(item => ({
           menuItemId: item.menuItemId,
           quantity: item.quantity,
           specialInstructions: item.specialInstructions,
           price: item.price
-        })),
-        kitchenRouting: Object.keys(kitchenGroups),
-        roundNumber: activeOrder.rounds.length
-      };
+        }));
+        
+        await restaurantOrderApi.addItemsToOrder(existingOrderId, { items: newItems });
+        
+        // Add new round to existing order
+        const newRound = {
+          id: activeOrder.rounds.length + 1,
+          items: cart,
+          timestamp: new Date(),
+          status: 'submitted',
+          orderId: existingOrderId,
+          orderNumber: activeOrder.rounds[0]?.orderNumber
+        };
+        
+        setActiveOrder(prev => ({
+          ...prev,
+          rounds: [...prev.rounds, newRound]
+        }));
+        
+        // Emit socket event for order items added
+        emitEvent('order-items-added', {
+          orderId: existingOrderId,
+          newItems,
+          kitchenTypes: Object.keys(kitchenGroups)
+        });
+        
+      } else {
+        // Create new order
+        const orderData = {
+          restaurantId: selectedRestaurant,
+          tableId: selectedTable.id,
+          customerInfo,
+          specialInstructions,
+          items: cart.map(item => ({
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            specialInstructions: item.specialInstructions,
+            price: item.price
+          })),
+          kitchenRouting: Object.keys(kitchenGroups),
+          roundNumber: activeOrder.rounds.length
+        };
 
-      const response = await restaurantOrderApi.createOrder(orderData);
+        const response = await restaurantOrderApi.createOrder(orderData);
+        
+        // Update active order with submitted round for new orders
+        const submittedRound = {
+          ...activeOrder.rounds[activeOrder.rounds.length - 1],
+          items: cart,
+          status: 'submitted',
+          orderId: response.order.id,
+          orderNumber: response.order.order_number
+        };
+        
+        setActiveOrder(prev => ({
+          ...prev,
+          rounds: [
+            ...prev.rounds.slice(0, -1),
+            submittedRound
+          ],
+          latestOrderId: response.order.id
+        }));
+        
+        // Emit socket event for new order
+        emitEvent('new-order-submitted', {
+          orderId: response.order.id,
+          orderNumber: response.order.order_number,
+          tableId: selectedTable.id,
+          kitchenTypes: Object.keys(kitchenGroups)
+        });
+      }
       
-      // Update active order with submitted round
-      const submittedRound = {
-        ...activeOrder.rounds[activeOrder.rounds.length - 1],
-        items: cart,
-        status: 'submitted',
-        orderId: response.order.id,
-        orderNumber: response.order.order_number
-      };
-      
-      setActiveOrder(prev => ({
-        ...prev,
-        rounds: [
-          ...prev.rounds.slice(0, -1),
-          submittedRound
-        ],
-        latestOrderId: response.order.id
-      }));
-
       // Clear current cart but keep order session active
       setCart([]);
       
-      // Emit socket event for real-time updates
-      emitEvent('new-order-submitted', {
-        orderId: response.order.id,
-        orderNumber: response.order.order_number,
-        tableId: selectedTable.id,
-        kitchenTypes: Object.keys(kitchenGroups)
-      });
-
       // Refresh current orders list
       const ordersData = await restaurantOrderApi.getOrders();
       setCurrentOrders(ordersData.orders || []);
@@ -254,29 +293,35 @@ const WaiterOrderInterface = () => {
     );
   }
   const handleAddOrderToExisting = (order) => {
-  setActiveOrder(order);             
-  setSelectedTable({ id: order.table_id, table_name: order.table_number });
-  setCart(
-  (order.items ).map(item => ({
-    id: item.id, 
-    menuItemId: item.menu_item_id,
-    name: item.item_name,
-    price: item.price || item.unit_price,
-    quantity: item.quantity,
-    specialInstructions: item.special_instructions || '',
+    setActiveOrder({
+      ...order,
+      tableId: order.table_id,
+      tableName: `Table ${order.table_number}`,
+      restaurantId: selectedRestaurant,
+      rounds: [{
+        id: 1,
+        items: order.items || [],
+        timestamp: new Date(order.placed_at),
+        status: 'submitted',
+        orderId: order.id,
+        orderNumber: order.order_number
+      }]
+    });             
+    setSelectedTable({ id: order.table_id, table_name: `Table ${order.table_number}` });
     
-  }))
-);
-        // pre-fill with current items
-  setCustomerInfo({
-    firstName: order.first_name || '',
-    lastName: order.last_name || '',
-    phone: order.phone || '',
-    email: order.email || ''
-  });
-  setSpecialInstructions(order.kitchen_notes || '');
-  setShowAddOrderModal(true);
-};
+    // Start with empty cart for new items to be added
+    setCart([]);
+    
+    // Pre-fill customer information
+    setCustomerInfo({
+      firstName: order.first_name || '',
+      lastName: order.last_name || '',
+      phone: order.phone || '',
+      email: order.email || ''
+    });
+    setSpecialInstructions('');
+    setShowAddOrderModal(false); // Don't show modal, let them add items directly
+  };
 
 
   return (

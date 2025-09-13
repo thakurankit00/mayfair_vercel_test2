@@ -158,6 +158,27 @@ export const userApi = {
     const params = role ? { role } : {};
     const response = await api.get('/users', { params });
     return response.data;
+  },
+
+  // Admin user management functions
+  async createUser(userData) {
+    const response = await api.post('/users', userData);
+    return response.data;
+  },
+
+  async updateUser(userId, userData) {
+    const response = await api.put(`/users/${userId}`, userData);
+    return response.data;
+  },
+
+  async deactivateUser(userId) {
+    const response = await api.delete(`/users/${userId}`);
+    return response.data;
+  },
+
+  async activateUser(userId) {
+    const response = await api.patch(`/users/${userId}/activate`);
+    return response.data;
   }
 };
 

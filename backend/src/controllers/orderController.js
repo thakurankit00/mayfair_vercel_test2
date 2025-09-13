@@ -541,7 +541,8 @@ const updateOrderStatus = async (req, res) => {
 const updateOrderItemStatus = async (req, res) => {
   try {
     const { orderId, itemId } = req.params;
-    const { status } = req.body;
+    const { status, chef_notes } = req.body;
+    const userId = req.user.id;
     const userRole = req.user.role;
     
     if (!['chef', 'bartender', 'manager', 'admin'].includes(userRole)) {
@@ -554,12 +555,12 @@ const updateOrderItemStatus = async (req, res) => {
       });
     }
     
-    if (!status || !['pending', 'preparing', 'ready', 'served'].includes(status)) {
+    if (!status || !['pending', 'accepted', 'preparing', 'ready_to_serve'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Valid status is required'
+          message: 'Valid status is required (pending, accepted, preparing, ready_to_serve)'
         }
       });
     }
@@ -579,18 +580,31 @@ const updateOrderItemStatus = async (req, res) => {
       });
     }
     
-    // Update item status
+    // Update item status with proper timestamps
     const updateData = {
       status,
       updated_at: new Date()
     };
     
-    if (status === 'preparing') {
-      updateData.started_at = new Date();
+    if (status === 'accepted') {
+      updateData.accepted_at = new Date();
+      updateData.accepted_by = userId;
     }
     
-    if (status === 'ready') {
-      updateData.completed_at = new Date();
+    if (status === 'preparing') {
+      updateData.started_preparing_at = new Date();
+      if (!existingItem.accepted_at) {
+        updateData.accepted_at = new Date();
+        updateData.accepted_by = userId;
+      }
+    }
+    
+    if (status === 'ready_to_serve') {
+      updateData.ready_at = new Date();
+    }
+    
+    if (chef_notes) {
+      updateData.chef_notes = chef_notes;
     }
     
     const updatedItem = await db('order_items')
@@ -598,29 +612,25 @@ const updateOrderItemStatus = async (req, res) => {
       .update(updateData)
       .returning('*');
     
-    // Check if all items are ready to update order status
-    const orderItems = await db('order_items')
-      .where('order_id', orderId);
+    // Get order details for socket notification
+    const order = await db('orders').where('id', orderId).first();
     
-    const allReady = orderItems.every(item => ['ready', 'served'].includes(item.status));
-    
-    if (allReady) {
-      await db('orders')
-        .where('id', orderId)
-        .update({
-          status: 'ready',
-          ready_at: new Date(),
-          updated_at: new Date()
-        });
-    }
+    // Emit socket event for item status update
+    const socketHandler = req.app.get('socketHandler');
     if (socketHandler) {
-  socketHandler.emitOrderItemStatusUpdate({
-    orderId,
-    itemId,
-    status,
-    updatedBy: userRole
-  });
-}
+      socketHandler.emitOrderItemStatusUpdate({
+        orderId,
+        orderNumber: order.order_number,
+        itemId,
+        status,
+        chefNotes: chef_notes,
+        updatedBy: userId,
+        updatedByRole: userRole,
+        waiterId: order.waiter_id,
+        customerId: order.user_id
+      });
+    }
+    
     return res.status(200).json({
       success: true,
       data: { item: updatedItem[0] },
@@ -1408,6 +1418,96 @@ const getOrderKitchenLogs = async (req, res) => {
 };
 
 /**
+ * Get kitchen dashboard data for chefs
+ * GET /api/v1/restaurant/kitchen/dashboard
+ */
+const getKitchenDashboard = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { restaurant_id } = req.query;
+    
+    if (!['chef', 'bartender', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only kitchen staff can access kitchen dashboard'
+        }
+      });
+    }
+    
+    // Use the kitchen dashboard function from migration
+    const dashboardData = await db.raw(
+      'SELECT * FROM get_kitchen_dashboard_orders(?)',
+      [restaurant_id || null]
+    );
+    
+    // Group items by order
+    const ordersMap = new Map();
+    
+    dashboardData.rows.forEach(row => {
+      if (!ordersMap.has(row.order_id)) {
+        ordersMap.set(row.order_id, {
+          id: row.order_id,
+          orderNumber: row.order_number,
+          tableNumber: row.table_number,
+          customerName: row.customer_name,
+          waiterName: row.waiter_name,
+          orderType: row.order_type,
+          placedAt: row.placed_at,
+          specialInstructions: row.special_instructions,
+          items: []
+        });
+      }
+      
+      ordersMap.get(row.order_id).items.push({
+        id: row.item_id,
+        name: row.item_name,
+        quantity: row.item_quantity,
+        status: row.item_status,
+        specialInstructions: row.item_special_instructions,
+        preparationTime: row.preparation_time,
+        acceptedAt: row.accepted_at,
+        startedPreparingAt: row.started_preparing_at,
+        readyAt: row.ready_at,
+        chefNotes: row.chef_notes
+      });
+    });
+    
+    const orders = Array.from(ordersMap.values());
+    
+    // Get summary statistics
+    const stats = {
+      totalPendingOrders: orders.filter(o => o.items.some(i => i.status === 'pending')).length,
+      totalAcceptedOrders: orders.filter(o => o.items.some(i => i.status === 'accepted')).length,
+      totalPreparingOrders: orders.filter(o => o.items.some(i => i.status === 'preparing')).length,
+      totalPendingItems: orders.reduce((sum, o) => sum + o.items.filter(i => i.status === 'pending').length, 0),
+      totalAcceptedItems: orders.reduce((sum, o) => sum + o.items.filter(i => i.status === 'accepted').length, 0),
+      totalPreparingItems: orders.reduce((sum, o) => sum + o.items.filter(i => i.status === 'preparing').length, 0)
+    };
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        orders,
+        stats
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get kitchen dashboard error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to fetch kitchen dashboard'
+      }
+    });
+  }
+};
+
+/**
  * Generate bill for order
  * POST /api/v1/restaurant/orders/:orderId/bill
  */
@@ -1531,6 +1631,7 @@ module.exports = {
   addOrderItems,
   generateBill,
   // Kitchen management
+  getKitchenDashboard,
   getKitchenOrders,
   acceptKitchenOrder,
   rejectKitchenOrder,

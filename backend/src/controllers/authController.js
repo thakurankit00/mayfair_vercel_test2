@@ -144,8 +144,7 @@ const login = async (req, res, next) => {
         }
       });
     }
-    const passwordHash = await bcrypt.hash(password, 12);
-    console.log(passwordHash);
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 

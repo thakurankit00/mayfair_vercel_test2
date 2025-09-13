@@ -17,7 +17,7 @@ import {
 import { uploadApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 import RestaurantSelector from './RestaurantSelector';
-import KitchenDashboard from './KitchenDashboard';
+import ChefDashboard from '../kitchen/ChefDashboard';
 
 const RestaurantPage = () => {
   // Custom cancel confirmation modal state
@@ -365,7 +365,7 @@ const RestaurantPage = () => {
           )}
 
           {/* Kitchen Tab */}
-          {activeTab === 'kitchen' && <KitchenDashboard />}
+          {activeTab === 'kitchen' && <ChefDashboard />}
         </div>
       )}
 
