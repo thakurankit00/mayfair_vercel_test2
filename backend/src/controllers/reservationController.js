@@ -489,15 +489,6 @@ const updateReservation = async (req, res) => {
     // Status updates with proper role checking
     if (updateData.status && ['receptionist', 'waiter', 'manager', 'admin'].includes(userRole)) {
       processedData.status = updateData.status;
-      if (updateData.status === 'seated') {
-        processedData.seated_at = new Date();
-      }
-      if (updateData.status === 'completed') {
-        processedData.completed_at = new Date();
-      }
-      if (updateData.status === 'cancelled') {
-        processedData.cancelled_at = new Date();
-      }
     }
     
     // Note: Customer info (first_name, last_name, email, phone) is stored in users table

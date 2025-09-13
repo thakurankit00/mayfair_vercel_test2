@@ -8,6 +8,7 @@ const ReservationDetailsModal = ({ reservation, onClose, onUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentReservation, setCurrentReservation] = useState(reservation);
+   const [showConfirm, setShowConfirm] = useState(false); 
 
   useEffect(() => {
     setCurrentReservation(reservation);
@@ -40,7 +41,7 @@ const ReservationDetailsModal = ({ reservation, onClose, onUpdate }) => {
   if (!currentReservation) return null;
 
   const handleCancel = async () => {
-    if (!window.confirm('Are you sure you want to cancel this reservation?')) return;
+    setShowConfirm(false); // close the confirmation popup
     
     setLoading(true);
     try {
@@ -189,7 +190,7 @@ const ReservationDetailsModal = ({ reservation, onClose, onUpdate }) => {
             </button>
             {canCancel && (
               <button
-                onClick={handleCancel}
+                onClick={() => setShowConfirm(true)} // open custom confirmation
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
                 disabled={loading}
               >
@@ -197,6 +198,53 @@ const ReservationDetailsModal = ({ reservation, onClose, onUpdate }) => {
               </button>
             )}
           </div>
+        )}
+         {/* Custom Confirmation Popup */}
+
+        {showConfirm && (
+
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-40">
+
+            <div className="bg-white rounded-lg shadow-lg p-6 w-80 text-center">
+
+              <p className="mb-4 text-gray-900 font-medium">Are you sure you want to cancel this reservation?</p>
+
+              <div className="flex justify-center space-x-4">
+
+                <button
+
+                  onClick={handleCancel}
+
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+
+                  disabled={loading}
+
+                >
+
+                  Yes
+
+                </button>
+
+                <button
+
+                  onClick={() => setShowConfirm(false)}
+
+                  className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400"
+
+                  disabled={loading}
+
+                >
+
+                  No
+
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
         )}
       </div>
     </div>

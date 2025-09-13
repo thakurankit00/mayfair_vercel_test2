@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import MenuItemActions from './MenuItemActions';
 import EditCategoryModal from './EditCategoryModal';
 import AddCategoryModal from './AddCategoryModal';
-import ReservationModal from './ReservationModal';
+
 import PlaceOrderModal from './PlaceOrderModal';
 import { useAuth } from '../../contexts/AuthContext';
 import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
 import RestaurantTables from './RestaurantTables';
+import ReservationsPage from './ReservationsPage';
 import StatusBadge from '../common/StatusBadge';
 import {
   restaurantApi,
@@ -22,41 +23,7 @@ import RestaurantSelector from './RestaurantSelector';
 import ChefDashboard from '../kitchen/ChefDashboard';
 
 const RestaurantPage = () => {
-  // Custom cancel confirmation modal state
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelReservationId, setCancelReservationId] = useState(null);
-  const [cancelingId, setCancelingId] = useState(null);
-  const [cancelError, setCancelError] = useState(null);
 
-  // Called by ReservationsTab when cancel is requested
-  const handleCancelRequest = (id) => {
-    setCancelReservationId(id);
-    setShowCancelModal(true);
-  };
-
-  // Called by modal when confirmed
-  const confirmCancel = async () => {
-    setCancelError(null);
-    setCancelingId(cancelReservationId);
-    try {
-      await restaurantReservationApi.cancelReservation(cancelReservationId);
-      const reservationData = await restaurantReservationApi.getReservations();
-      setReservations(reservationData.reservations || []);
-    } catch (err) {
-      setCancelError(err.message || 'Failed to cancel reservation');
-    }
-    setCancelingId(null);
-    setShowCancelModal(false);
-    setCancelReservationId(null);
-  };
-
-  // Called by modal when cancelled
-  const closeCancelModal = () => {
-    setShowCancelModal(false);
-    setCancelReservationId(null);
-  };
-  // Custom cancel confirmation modal state
-  // ...existing code...
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('menu');
   const [loading, setLoading] = useState(false);
@@ -66,13 +33,10 @@ const RestaurantPage = () => {
   // Data states
   const [restaurants, setRestaurants] = useState([]);
   const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
-  const [reservations, setReservations] = useState([]);
   const [orders, setOrders] = useState([]);
 
   // Form states
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
-  const [showReservationModal, setShowReservationModal] = useState(false);
-  const [editingReservation, setEditingReservation] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
@@ -103,8 +67,7 @@ const RestaurantPage = () => {
             setMenu(menuData);
             break;
           case 'reservations':
-            const reservationData = await restaurantReservationApi.getReservations();
-            setReservations(reservationData.reservations || []);
+            // Data is loaded within ReservationsPage component
             break;
           case 'orders':
             const orderData = await restaurantOrderApi.getOrders();
@@ -247,65 +210,7 @@ const RestaurantPage = () => {
 
           {/* Reservations Tab */}
           {activeTab === 'reservations' && (
-            <>
-              <ReservationsTab
-                reservations={reservations}
-                userRole={user.role}
-                onCreateReservation={() => {
-                  setEditingReservation(null);
-                  setShowReservationModal(true);
-                }}
-                onEditReservation={(reservation) => {
-                  setEditingReservation(reservation);
-                  setShowReservationModal(true);
-                }}
-                onCancelRequest={handleCancelRequest}
-                cancelingId={cancelingId}
-                cancelError={cancelError}
-              />
-          {showCancelModal && (
-            <div className="fixed inset-0 z-50 flex items-start justify-center bg-black bg-opacity-30">
-              <div className="bg-white rounded-lg shadow-lg mt-16 p-6 w-full max-w-xs text-center">
-                <h3 className="text-lg font-semibold mb-4">Cancel Reservation</h3>
-                <p className="mb-6 text-gray-700">Are you sure you want to cancel this reservation?</p>
-                <div className="flex justify-center space-x-4">
-                  <button
-                    className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                    onClick={closeCancelModal}
-                  >
-                    No
-                  </button>
-                  <button
-                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                    onClick={confirmCancel}
-                    disabled={cancelingId === cancelReservationId}
-                  >
-                    {cancelingId === cancelReservationId ? 'Cancelling...' : 'Yes, Cancel'}
-                  </button>
-                </div>
-                {cancelError && (
-                  <div className="mt-4 text-red-600 text-sm">{cancelError}</div>
-                )}
-              </div>
-            </div>
-          )}
-              {showReservationModal && (
-                <ReservationModal
-                  reservation={editingReservation}
-                  onClose={() => setShowReservationModal(false)}
-                  onSave={async () => {
-                    try {
-                      const reservationData = await restaurantReservationApi.getReservations();
-                      setReservations(reservationData.reservations || []);
-                      setShowReservationModal(false);
-                      setEditingReservation(null);
-                    } catch (err) {
-                      setError(err.message || 'Failed to refresh reservations');
-                    }
-                  }}
-                />
-              )}
-            </>
+            <ReservationsPage />
           )}
 
           {/* Orders Tab */}
@@ -949,105 +854,7 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
   );
 };
 
-// Reservations Tab Component
-const ReservationsTab = ({ reservations, userRole, onCreateReservation, onEditReservation, onCancelRequest, cancelingId, cancelError }) => {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">Table Reservations</h3>
-        <button
-          onClick={onCreateReservation}
-          className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
-        >
-          New Reservation
-        </button>
-      </div>
 
-      {cancelError && (
-        <div className="mb-4 bg-red-50 border border-white rounded-md p-3 text-red-700">
-          {cancelError}
-        </div>
-      )}
-
-      {/* Reservations List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Reference
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Customer
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Table
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date & Time
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Party Size
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {reservations.map((reservation) => (
-                <tr key={reservation.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {reservation.reservation_reference}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {reservation.user_first_name && reservation.user_last_name 
-                      ? `${reservation.user_first_name} ${reservation.user_last_name}`
-                      : reservation.customer_name || '-'
-                    }
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    Table {reservation.table_number} ({reservation.location})
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(reservation.reservation_date).toLocaleDateString()} at{' '}
-                    {reservation.reservation_time?.slice(0, 5)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {reservation.party_size}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {/* 👇 Replace old inline span with StatusBadge */}
-                    <StatusBadge status={reservation.status} />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
-                    <button
-                      className="text-blue-600 hover:text-blue-700 mr-2"
-                      onClick={() => onEditReservation(reservation)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="text-yellow-600 hover:text-white bg-yellow-100 hover:bg-yellow-600 border border-yellow-200 rounded px-2 py-1 transition-colors duration-150"
-                      onClick={() => onCancelRequest(reservation.id)}
-                      disabled={cancelingId === reservation.id}
-                    >
-                      {cancelingId === reservation.id ? 'Cancelling...' : 'Cancel'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // Orders Tab Component
 const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants,onPlaceOrder }) => {
