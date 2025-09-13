@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
-import { orderApi } from '../../services/restaurantApi';
+import { kitchenApi, restaurantOrderApi } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 const ChefDashboard = () => {
@@ -15,8 +15,23 @@ const ChefDashboard = () => {
   // Fetch dashboard data
   const fetchDashboardData = async () => {
     try {
-      const data = await orderApi.getKitchenDashboard();
-      setDashboardData(data);
+      // Get user's kitchens first
+      const kitchensData = await kitchenApi.getKitchens();
+      const userKitchens = kitchensData.kitchens.filter(kitchen => {
+        if (user.role === 'chef') {
+          return kitchen.restaurant_type === 'restaurant';
+        } else if (user.role === 'bartender') {
+          return kitchen.restaurant_type === 'bar';
+        }
+        return true;
+      });
+      
+      if (userKitchens.length > 0) {
+        const data = await kitchenApi.getKitchenDashboard(userKitchens[0].id);
+        setDashboardData(data);
+      } else {
+        setDashboardData({ orders: [], stats: {} });
+      }
       setError('');
     } catch (err) {
       setError(err.message || 'Failed to fetch kitchen dashboard data');
@@ -68,7 +83,7 @@ const ChefDashboard = () => {
     try {
       setUpdateLoading(prev => ({ ...prev, [itemId]: true }));
       
-      await orderApi.updateOrderItemStatus(orderId, itemId, { 
+      await restaurantOrderApi.updateOrderItemStatus(orderId, itemId, { 
         status, 
         chef_notes: chefNotes 
       });
@@ -104,7 +119,7 @@ const ChefDashboard = () => {
     );
   }
 
-  const { orders, stats } = dashboardData;
+  const { orders = [], stats = {} } = dashboardData || {};
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -200,14 +215,14 @@ const ChefDashboard = () => {
         </div>
         
         <div className="divide-y divide-gray-200">
-          {orders.length === 0 ? (
+          {!orders || orders.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <div className="text-gray-400 text-6xl mb-4">🍽️</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No active orders</h3>
               <p className="text-gray-600">New orders will appear here automatically</p>
             </div>
           ) : (
-            orders.map((order) => (
+            (orders || []).map((order) => (
               <OrderItemCard
                 key={order.id}
                 order={order}

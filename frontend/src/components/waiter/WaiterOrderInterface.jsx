@@ -292,35 +292,48 @@ const WaiterOrderInterface = () => {
       </div>
     );
   }
-  const handleAddOrderToExisting = (order) => {
-    setActiveOrder({
-      ...order,
-      tableId: order.table_id,
-      tableName: `Table ${order.table_number}`,
-      restaurantId: selectedRestaurant,
-      rounds: [{
-        id: 1,
-        items: order.items || [],
-        timestamp: new Date(order.placed_at),
-        status: 'submitted',
-        orderId: order.id,
-        orderNumber: order.order_number
-      }]
-    });             
-    setSelectedTable({ id: order.table_id, table_name: `Table ${order.table_number}` });
-    
-    // Start with empty cart for new items to be added
-    setCart([]);
-    
-    // Pre-fill customer information
-    setCustomerInfo({
-      firstName: order.first_name || '',
-      lastName: order.last_name || '',
-      phone: order.phone || '',
-      email: order.email || ''
-    });
-    setSpecialInstructions('');
-    setShowAddOrderModal(false); // Don't show modal, let them add items directly
+  const handleAddOrderToExisting = async (order) => {
+    try {
+      setLoading(true);
+      
+      // Fetch full order details with items
+      const fullOrder = await restaurantOrderApi.getOrderById(order.id);
+      
+      setActiveOrder({
+        ...fullOrder.order,
+        tableId: fullOrder.order.table_id,
+        tableName: `Table ${fullOrder.order.table_number}`,
+        restaurantId: selectedRestaurant,
+        latestOrderId: fullOrder.order.id,
+        rounds: [{
+          id: 1,
+          items: fullOrder.order.items || [],
+          timestamp: new Date(fullOrder.order.placed_at),
+          status: 'submitted',
+          orderId: fullOrder.order.id,
+          orderNumber: fullOrder.order.order_number
+        }]
+      });
+      
+      setSelectedTable({ id: fullOrder.order.table_id, table_name: `Table ${fullOrder.order.table_number}` });
+      
+      // Pre-fill customer information
+      setCustomerInfo({
+        firstName: fullOrder.order.first_name || '',
+        lastName: fullOrder.order.last_name || '',
+        phone: fullOrder.order.phone || '',
+        email: fullOrder.order.email || ''
+      });
+      setSpecialInstructions(fullOrder.order.special_instructions || '');
+      
+      // Show modal with existing order data
+      setShowAddOrderModal(true);
+      
+    } catch (err) {
+      setError(err.message || 'Failed to load existing order');
+    } finally {
+      setLoading(false);
+    }
   };
 
 
@@ -447,22 +460,22 @@ const WaiterOrderInterface = () => {
       {showAddOrderModal && activeOrder && (
   <PlaceOrderModal
     onClose={() => setShowAddOrderModal(false)}
-    existingOrder={activeOrder}   // 👈 pre-fill data
+    existingOrder={activeOrder}
     selectedRestaurant={selectedRestaurant}
     restaurants={restaurants}
     userRole={user?.role}
     onSave={async (updatedOrderData) => {
       try {
-        // 🔄 update instead of creating
-        await restaurantOrderApi.updateOrder(activeOrder.id, updatedOrderData);
+        // Add items to existing order
+        await restaurantOrderApi.addOrderItems(activeOrder.latestOrderId, updatedOrderData);
 
-        // refresh orders after update
+        // Refresh orders after update
         const ordersData = await restaurantOrderApi.getOrders();
         setCurrentOrders(ordersData.orders || []);
 
         setShowAddOrderModal(false);
       } catch (err) {
-        setError(err.message || "Failed to update order");
+        setError(err.message || "Failed to add items to order");
       }
     }}
   />
@@ -778,6 +791,7 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                   order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                   order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                  order.status ==='rejected' ? 'bg-red-100 text-red-800':
                   'bg-green-100 text-green-800'
                 }`}>
                   {order.status}
