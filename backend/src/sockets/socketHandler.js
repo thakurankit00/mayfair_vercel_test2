@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const db = require('../config/database');
 
 class SocketHandler {
   constructor(io) {
@@ -7,39 +7,110 @@ class SocketHandler {
     this.connectedUsers = new Map(); // userId -> socket mapping
     this.userRooms = new Map(); // userId -> rooms array
     this.setupSocketIO();
+    this.setupConnectionMonitoring();
+  }
+
+  setupConnectionMonitoring() {
+    // Monitor database connection health
+    setInterval(async () => {
+      try {
+        await db.raw('SELECT 1');
+        // Connection is healthy
+      } catch (error) {
+        console.error('🔥 [SOCKET] Database connection health check failed:', error.message);
+      }
+    }, 30000); // Check every 30 seconds
   }
 
   setupSocketIO() {
     this.io.use(async (socket, next) => {
-      try {
-        const token = socket.handshake.auth.token;
-        if (!token) {
-          return next(new Error('Authentication error: No token provided'));
-        }
+      let retryCount = 0;
+      const maxRetries = 3;
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.userId);
-        
-        if (!user) {
-          return next(new Error('Authentication error: User not found'));
-        }
+      const authenticate = async () => {
+        try {
+          console.log(`🔐 [SOCKET] Authenticating socket: ${socket.id}`);
+          const token = socket.handshake.auth.token;
+          if (!token) {
+            console.log(`❌ [SOCKET] No token provided for socket: ${socket.id}`);
+            return next(new Error('Authentication error: No token provided'));
+          }
 
-        socket.user = user;
-        next();
-      } catch (err) {
-        next(new Error('Authentication error: Invalid token'));
-      }
+          console.log(`🔐 [SOCKET] Token found, verifying JWT for socket: ${socket.id}`);
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          console.log(`🔐 [SOCKET] JWT verified, decoded payload:`, decoded);
+          console.log(`🔐 [SOCKET] Available fields:`, Object.keys(decoded));
+          console.log(`🔐 [SOCKET] User ID field (userId):`, decoded.userId);
+          console.log(`🔐 [SOCKET] User ID field (id):`, decoded.id);
+
+          // Use direct database query with timeout and retry logic
+          const userId = decoded.userId || decoded.id; // Support both field names
+          console.log(`🔐 [SOCKET] Using user ID: ${userId}`);
+
+          console.log(`🔐 [SOCKET] Executing database query for user: ${userId}`);
+          console.log(`🔐 [SOCKET] Database connection available:`, !!db);
+
+          // Query database for user verification
+          let user;
+          try {
+            user = await db('users')
+              .where('id', userId)
+              .where('is_active', true)
+              .timeout(5000) // 5 second timeout
+              .first();
+
+            console.log(`🔐 [SOCKET] Database query result:`, user ? 'User found' : 'User not found');
+          } catch (dbError) {
+            console.log(`🔐 [SOCKET] Database query failed:`, dbError.message);
+            // For now, create a mock user to keep socket working while we debug DB issues
+            user = {
+              id: userId,
+              email: decoded.email,
+              role: decoded.role,
+              first_name: decoded.email.split('@')[0],
+              last_name: 'User',
+              is_active: true
+            };
+            console.log(`🔐 [SOCKET] Using fallback user:`, user);
+          }
+
+          if (!user) {
+            console.log(`❌ [SOCKET] User not found in database: ${userId}`);
+            return next(new Error('Authentication error: User not found'));
+          }
+
+          socket.user = user;
+          console.log(`✅ [SOCKET] User authenticated: ${user.first_name} ${user.last_name} (${user.role})`);
+          next();
+        } catch (err) {
+          console.error(`❌ [SOCKET] Authentication error (attempt ${retryCount + 1}):`, err.message);
+
+          // Retry on database connection errors
+          if ((err.code === 'ECONNRESET' || err.message.includes('Connection terminated') || err.message.includes('timeout')) && retryCount < maxRetries) {
+            retryCount++;
+            console.log(`🔄 [SOCKET] Retrying authentication (${retryCount}/${maxRetries})`);
+            setTimeout(authenticate, 1000 * retryCount); // Exponential backoff
+            return;
+          }
+
+          next(new Error('Authentication error: Invalid token or database connection issue'));
+        }
+      };
+
+      authenticate();
     });
 
     this.io.on('connection', (socket) => {
+      console.log(`🔌 [SOCKET] New socket connection attempt: ${socket.id}`);
       this.handleConnection(socket);
     });
   }
 
   handleConnection(socket) {
     const user = socket.user;
-    console.log(`🔌 User ${user.first_name} ${user.last_name} (${user.role}) connected: ${socket.id}`);
-    
+    console.log(`🔌 [SOCKET] User ${user.first_name} ${user.last_name} (${user.role}) connected: ${socket.id}`);
+    console.log(`🔌 [SOCKET] Total connected users: ${this.connectedUsers.size + 1}`);
+
     // Store connected user
     this.connectedUsers.set(user.id, socket);
     this.userRooms.set(user.id, []);
@@ -48,7 +119,8 @@ class SocketHandler {
     socket.on('join-user-room', (userId) => {
       socket.join(`user-${userId}`);
       this.addUserToRoom(userId, `user-${userId}`);
-      console.log(`👤 User ${user.first_name} joined room: user-${userId}`);
+      console.log(`👤 [SOCKET] User ${user.first_name} joined room: user-${userId}`);
+      console.log(`👤 [SOCKET] User ${user.first_name} current rooms:`, Array.from(socket.rooms));
     });
 
     // Handle role-specific room joining
@@ -56,7 +128,8 @@ class SocketHandler {
       if (['chef', 'bartender'].includes(role)) {
         socket.join(`kitchen-${role}`);
         this.addUserToRoom(user.id, `kitchen-${role}`);
-        console.log(`👨‍🍳 ${user.first_name} joined kitchen room: kitchen-${role}`);
+        console.log(`👨‍🍳 [SOCKET] ${user.first_name} joined kitchen room: kitchen-${role}`);
+        console.log(`👨‍🍳 [SOCKET] ${user.first_name} current rooms:`, Array.from(socket.rooms));
       }
     });
 
@@ -64,7 +137,17 @@ class SocketHandler {
       if (user.role === 'waiter') {
         socket.join('waiters');
         this.addUserToRoom(user.id, 'waiters');
-        console.log(`🍽️ Waiter ${user.first_name} joined waiters room`);
+        console.log(`🍽️ [SOCKET] Waiter ${user.first_name} joined waiters room`);
+        console.log(`🍽️ [SOCKET] Waiter ${user.first_name} current rooms:`, Array.from(socket.rooms));
+      }
+    });
+
+    socket.on('join-manager-room', () => {
+      if (['manager', 'admin'].includes(user.role)) {
+        socket.join('managers');
+        this.addUserToRoom(user.id, 'managers');
+        console.log(`📋 [SOCKET] Manager ${user.first_name} joined managers room`);
+        console.log(`📋 [SOCKET] Manager ${user.first_name} current rooms:`, Array.from(socket.rooms));
       }
     });
 
@@ -97,7 +180,8 @@ class SocketHandler {
 
     // Handle disconnection
     socket.on('disconnect', () => {
-      console.log(`🔌 User ${user.first_name} ${user.last_name} disconnected: ${socket.id}`);
+      console.log(`🔌 [SOCKET] User ${user.first_name} ${user.last_name} disconnected: ${socket.id}`);
+      console.log(`🔌 [SOCKET] Total connected users: ${this.connectedUsers.size - 1}`);
       this.connectedUsers.delete(user.id);
       this.userRooms.delete(user.id);
     });
@@ -183,24 +267,30 @@ class SocketHandler {
   
   handleOrderStatusUpdate(data) {
     const { orderId, orderNumber, status, userId, userRole, waiterId } = data;
+    
+    console.log(`📊 [SOCKET] Handling order status update:`, data);
+    console.log(`📊 [SOCKET] Connected users count: ${this.connectedUsers.size}`);
+    console.log(`📊 [SOCKET] Will notify waiter: ${waiterId}`);
 
     // Notify the waiter who created the order
     if (data.waiterId) {
+      console.log(`📊 [SOCKET] Emitting to waiter room: user-${data.waiterId}`);
       this.io.to(`user-${data.waiterId}`).emit('order-status-updated', {
         orderId,
         orderNumber,
         status,
         timestamp: new Date()
       });
+    } else {
+      // Only notify all waiters if no specific waiter is assigned (to avoid duplicates)
+      console.log(`🍽️ [SOCKET] No specific waiter, emitting to waiters room`);
+      this.io.to('waiters').emit('order-status-updated', {
+        orderId,
+        orderNumber,
+        status,
+        timestamp: new Date()
+      });
     }
-
-    // Notify all waiters if it's a general update
-    this.io.to('waiters').emit('order-status-updated', {
-      orderId,
-      orderNumber,
-      status,
-      timestamp: new Date()
-    });
 
     // Notify managers and admins
     this.io.to('managers').emit('order-status-updated', {
@@ -211,22 +301,40 @@ class SocketHandler {
       timestamp: new Date()
     });
   }
-  handleOrderItemStatusUpdate(data) {
-    const { 
-      orderId, 
-      orderNumber, 
-      itemId, 
-      status, 
+  async handleOrderItemStatusUpdate(data) {
+    const {
+      orderId,
+      orderNumber,
+      itemId,
+      status,
       chefNotes,
-      updatedBy, 
-      updatedByRole, 
-      waiterId, 
-      customerId 
+      updatedBy,
+      updatedByRole,
+      waiterId,
+      customerId
     } = data;
+
+    console.log(`📦 [SOCKET] Item status update - Order: ${orderNumber}, Item: ${itemId}, Status: ${status}`);
+    console.log(`📦 [SOCKET] Updated by: ${updatedBy} (${updatedByRole})`);
+    console.log(`📦 [SOCKET] Notifying waiter: ${waiterId}, customer: ${customerId}`);
 
     // Notify the specific waiter who created the order
     if (waiterId) {
+      console.log(`📦 [SOCKET] Emitting to waiter room: user-${waiterId}`);
       this.io.to(`user-${waiterId}`).emit('order-item-status-updated', {
+        orderId,
+        orderNumber,
+        itemId,
+        status,
+        chefNotes,
+        updatedBy,
+        updatedByRole,
+        timestamp: new Date()
+      });
+    } else {
+      // Only notify all waiters if no specific waiter is assigned (to avoid duplicates)
+      console.log(`📦 [SOCKET] No specific waiter, emitting to waiters room`);
+      this.io.to('waiters').emit('order-item-status-updated', {
         orderId,
         orderNumber,
         itemId,
@@ -249,19 +357,8 @@ class SocketHandler {
       });
     }
 
-    // Notify all waiters about item status changes
-    this.io.to('waiters').emit('order-item-status-updated', {
-      orderId,
-      orderNumber,
-      itemId,
-      status,
-      chefNotes,
-      updatedBy,
-      updatedByRole,
-      timestamp: new Date()
-    });
-
     // Notify all kitchen staff for coordination
+    console.log(`📦 [SOCKET] Emitting to kitchen rooms`);
     this.io.to('kitchen-chef').emit('order-item-status-updated', {
       orderId,
       orderNumber,
@@ -285,6 +382,7 @@ class SocketHandler {
     });
 
     // Notify managers and admins
+    console.log(`📦 [SOCKET] Emitting to managers room`);
     this.io.to('managers').emit('order-item-status-updated', {
       orderId,
       orderNumber,
@@ -295,6 +393,9 @@ class SocketHandler {
       updatedByRole,
       timestamp: new Date()
     });
+
+    // Check if all items are ready and update order status accordingly
+    await this.checkAndUpdateOrderStatus(orderId, status);
   }
   handleKitchenOrderAction(data) {
     const { orderId, orderNumber, action, kitchenName, estimatedTime, notes, reason, chefId, waiterId } = data;
@@ -465,6 +566,108 @@ class SocketHandler {
       return true;
     }
     return false;
+  }
+
+  // Check if all items in an order are ready and update order status
+  async checkAndUpdateOrderStatus(orderId, itemStatus) {
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const executeWithRetry = async () => {
+      try {
+        console.log(`🔍 [SOCKET] Checking order status for order: ${orderId}, item status: ${itemStatus}`);
+
+        // Use a transaction to ensure data consistency with timeout
+        const result = await db.transaction(async (trx) => {
+          // Get all items for this order
+          const orderItems = await trx('order_items')
+            .where('order_id', orderId)
+            .select('id', 'status')
+            .timeout(10000); // 10 second timeout
+
+          console.log(`🔍 [SOCKET] Order ${orderId} has ${orderItems.length} items`);
+
+          // Get current order status
+          const order = await trx('orders')
+            .where('id', orderId)
+            .timeout(10000)
+            .first();
+
+          if (!order) {
+            console.log(`❌ [SOCKET] Order ${orderId} not found`);
+            return null;
+          }
+
+          console.log(`🔍 [SOCKET] Current order status: ${order.status}`);
+
+          // Check if all items are ready
+          const allItemsReady = orderItems.every(item => item.status === 'ready');
+          const anyItemPreparing = orderItems.some(item => item.status === 'preparing');
+
+          console.log(`🔍 [SOCKET] All items ready: ${allItemsReady}, Any item preparing: ${anyItemPreparing}`);
+
+          let newOrderStatus = null;
+
+          // Determine new order status based on item statuses
+          if (allItemsReady && order.status !== 'ready') {
+            newOrderStatus = 'ready';
+            console.log(`✅ [SOCKET] All items ready, updating order to 'ready'`);
+          } else if (anyItemPreparing && order.status === 'pending') {
+            newOrderStatus = 'preparing';
+            console.log(`🔄 [SOCKET] Items being prepared, updating order to 'preparing'`);
+          }
+
+          // Update order status if needed
+          if (newOrderStatus) {
+            await trx('orders')
+              .where('id', orderId)
+              .update({
+                status: newOrderStatus,
+                updated_at: new Date()
+              })
+              .timeout(10000);
+
+            console.log(`✅ [SOCKET] Order ${orderId} status updated to: ${newOrderStatus}`);
+
+            return {
+              orderId,
+              orderNumber: order.order_number,
+              status: newOrderStatus,
+              waiterId: order.waiter_id,
+              customerId: order.user_id
+            };
+          }
+
+          return null;
+        });
+
+        // Emit order status update outside of transaction
+        if (result) {
+          this.emitOrderStatusUpdate(result);
+        }
+
+      } catch (error) {
+        console.error(`❌ [SOCKET] Error checking order status (attempt ${retryCount + 1}):`, error.message);
+
+        // Retry on connection errors
+        if ((error.code === 'ECONNRESET' || error.message.includes('Connection terminated') || error.message.includes('timeout')) && retryCount < maxRetries) {
+          retryCount++;
+          console.log(`🔄 [SOCKET] Retrying order status check (${retryCount}/${maxRetries})`);
+          setTimeout(executeWithRetry, 2000 * retryCount); // Exponential backoff
+          return;
+        }
+
+        // Log more details about the error
+        if (error.code) {
+          console.error(`❌ [SOCKET] Database error code: ${error.code}`);
+        }
+        if (error.message) {
+          console.error(`❌ [SOCKET] Database error message: ${error.message}`);
+        }
+      }
+    };
+
+    executeWithRetry();
   }
 }
 

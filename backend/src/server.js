@@ -31,7 +31,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
+    origin: ['http://localhost:3001', 'http://localhost:3002', process.env.CORS_ORIGIN].filter(Boolean),
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -56,8 +56,14 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS configuration
+const allowedOrigins = [
+  'http://localhost:3001',
+  'http://localhost:3002',
+  process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://192.168.1.5:3001',
+  origin: allowedOrigins,
   credentials: true
 }));
 
@@ -126,9 +132,9 @@ app.use(errorHandler);
 // Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
+  console.log(`🔌 Socket.io enabled with CORS: ${allowedOrigins.join(', ')}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'}`);
+  console.log(`🌐 CORS Origins: ${allowedOrigins.join(', ')}`);
 });
 
 // Graceful shutdown
