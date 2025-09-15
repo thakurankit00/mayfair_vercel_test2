@@ -94,9 +94,9 @@ INSERT INTO users (
   -- Admin
   (
     uuid_generate_v4(),
-    'David',
+    'Amit',
     'Admin',
-    'david.admin@mayfairhotel.com',
+    'amit.admin@mayfairhotel.com',
     '+91-9876543216',
     '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LeEHUTy5.VKU4JvOm',
     'admin', 
@@ -114,4 +114,4 @@ INSERT INTO users (
 \echo '  Chef: anna.chef@mayfairhotel.com'
 \echo '  Waiter: carlos.waiter@mayfairhotel.com'
 \echo '  Bartender: lisa.bartender@mayfairhotel.com'
-\echo '  Admin: david.admin@mayfairhotel.com'
+\echo '  Admin: Amit.admin@mayfairhotel.com'

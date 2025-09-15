@@ -1018,6 +1018,15 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
 
 // Order History Tab Component  
 const OrderHistoryTab = ({ orders, loading, userRole }) => {
+  const [showBillModal, setShowBillModal] = useState(false);
+  const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
+  const handleViewBill = (order) => {
+    setSelectedOrderForBill(order);
+    setShowBillModal(true);
+  };
+  const handleMarkAsPaid = (order) => {
+    alert('Mark as Paid: Implement backend call to update status to paid.');
+  };
   return (
     <div className="space-y-4">
       {/* Header with context */}
@@ -1051,29 +1060,29 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
               {order.status}
             </span>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm text-gray-600 mb-4">
             <div>
               <span className="font-medium">Customer:</span> {order.first_name} {order.last_name}
             </div>
             <div>
-              <span className="font-medium">Table:</span> {order.table_number}
+              <span className="font-medium">Table:</span> {order.table_number || (order.order_type === 'room-service' ? order.room_number : 'N/A')}
+            </div>
+            <div>
+              <span className="font-medium">Order Type:</span> {order.order_type}
             </div>
             <div>
               <span className="font-medium">Total:</span> ₹{parseFloat((order.total_amount || 0) + (order.tax_amount || 0)).toFixed(2)}
             </div>
             <div>
-              <span className="font-medium">Date:</span> {new Date(order.placed_at || order.created_at).toLocaleDateString()}
+              <span className="font-medium">Billing:</span> {order.status === 'paid' ? 'Paid' : order.status === 'billed' ? 'Billed' : 'Not Billed'}
             </div>
           </div>
-          
           {/* Waiter info for admin view */}
           {userRole === 'admin' && (order.waiter_first_name || order.waiter_last_name) && (
             <div className="mb-3 text-sm text-gray-600">
               <span className="font-medium">Served by:</span> {order.waiter_first_name} {order.waiter_last_name}
             </div>
           )}
-
           {/* Rejection/Cancellation Notes */}
           {order.status === 'cancelled' && order.special_instructions && (
             <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -1086,7 +1095,6 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
               </div>
             </div>
           )}
-
           {/* Special Instructions for other statuses */}
           {order.status !== 'cancelled' && order.special_instructions && (
             <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1094,7 +1102,6 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
               <p className="text-sm text-blue-700 mt-1">{order.special_instructions}</p>
             </div>
           )}
-          
           {/* Order Items for History */}
           {order.items && order.items.length > 0 && (
             <div className="mt-3">
@@ -1109,9 +1116,35 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
               </div>
             </div>
           )}
+          {/* Billing column and View Bill button */}
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-blue-700"
+              onClick={() => handleViewBill(order)}
+            >
+              View Bill
+            </button>
+            {userRole === 'manager' && order.status === 'billed' && (
+              <button
+                className="bg-green-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-green-700"
+                onClick={() => handleMarkAsPaid(order)}
+              >
+                Mark as Paid
+              </button>
+            )}
+          </div>
         </div>
       ))}
-      
+      {showBillModal && selectedOrderForBill && (
+        <BillModal
+          order={selectedOrderForBill}
+          onClose={() => {
+            setShowBillModal(false);
+            setSelectedOrderForBill(null);
+          }}
+          readOnly={true}
+        />
+      )}
       {orders.length === 0 && (
         <div className="text-center py-12">
           <div className="text-gray-400 text-lg">📚</div>
@@ -1127,7 +1160,6 @@ const BillModal = ({ order, onClose }) => {
   const handlePrint = () => {
     window.print();
   };
-    
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-96 overflow-y-auto">
@@ -1142,21 +1174,23 @@ const BillModal = ({ order, onClose }) => {
             ✕
           </button>
         </div>
-        
         <div className="space-y-4">
           <div className="text-center border-b pb-4">
             <h2 className="text-xl font-bold">Mayfair Hotel</h2>
             <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
           </div>
-
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span>Order Number:</span>
               <span className="font-medium">{order.order_number}</span>
             </div>
             <div className="flex justify-between">
-              <span>Table:</span>
-              <span className="font-medium">{order.table_number}</span>
+              <span>{order.order_type === 'room-service' ? 'Room Number:' : 'Table:'}</span>
+              <span className="font-medium">{order.order_type === 'room-service' ? order.room_number : order.table_number}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Order Type:</span>
+              <span className="font-medium">{order.order_type}</span>
             </div>
             <div className="flex justify-between">
               <span>Customer:</span>
@@ -1167,7 +1201,6 @@ const BillModal = ({ order, onClose }) => {
               <span className="font-medium">{new Date(order.placed_at).toLocaleString()}</span>
             </div>
           </div>
-
           <div className="border-t pt-4">
             <h4 className="font-medium mb-2">Items:</h4>
             <div className="space-y-1 text-sm">
@@ -1179,7 +1212,6 @@ const BillModal = ({ order, onClose }) => {
               ))}
             </div>
           </div>
-
           <div className="border-t pt-4 space-y-1 text-sm">
             <div className="flex justify-between">
               <span>Subtotal:</span>
@@ -1195,7 +1227,6 @@ const BillModal = ({ order, onClose }) => {
             </div>
           </div>
         </div>
-
         <div className="mt-6 flex space-x-3">
           <button
             onClick={onClose}
@@ -1203,16 +1234,17 @@ const BillModal = ({ order, onClose }) => {
           >
             Close
           </button>
-          <button
-            onClick={handlePrint}
-            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
-          >
-            Print Bill
-          </button>
+          {!order.readOnly && (
+            <button
+              onClick={handlePrint}
+              className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
+            >
+              Print Bill
+            </button>
+          )}
         </div>
       </div>
     </div>
-    
   );
 };
 
