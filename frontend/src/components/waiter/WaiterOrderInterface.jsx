@@ -982,24 +982,22 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
             </div>
 
             <div className="ml-4 space-y-2">
-              {order.status === 'ready' && (
+              <button
+                onClick={() => onGenerateBill(order)}
+                disabled={loading}
+                className="bg-blue-600 text-white px-4 py-2 mr-2 rounded text-md font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Generate Bill
+              </button>
+              {['pending', 'preparing'].includes(order.status) && (
                 <button
-                  onClick={() => onGenerateBill(order)}
+                  onClick={() => onAddOrderToExisting(order)}
                   disabled={loading}
-                  className="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                  className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 disabled:opacity-50"
                 >
-                  Generate Bill
+                  + Add Order
                 </button>
               )}
-              {['pending', 'preparing'].includes(order.status) && (
-    <button
-      onClick={() => onAddOrderToExisting(order)}
-      disabled={loading}
-      className="bg-green-600 text-white px-4 py-2 rounded  font-medium hover:bg-green-700 disabled:opacity-50"
-    >
-      + Add Order
-    </button>
-  )}
   
 
             </div>
@@ -1130,89 +1128,112 @@ const BillModal = ({ order, onClose }) => {
   };
     
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-96 overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Bill - Order #{order.order_number}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ✕
-          </button>
+ <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+  <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    
+    {/* Header */}
+    <div className="flex items-center justify-between mb-6">
+      <h3 className="text-xl font-semibold text-gray-900">
+        Bill - Order #{order.order_number}
+      </h3>
+      <button
+        onClick={onClose}
+        className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div className="space-y-6">
+      
+      {/* Hotel Info */}
+      <div className="text-center border-b pb-4">
+        <h2 className="text-2xl font-bold">Mayfair Hotel</h2>
+        <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
+      </div>
+
+      {/* Order Details */}
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-600">Order Number:</span>
+          <span className="font-medium">{order.order_number}</span>
         </div>
         
-        <div className="space-y-4">
-          <div className="text-center border-b pb-4">
-            <h2 className="text-xl font-bold">Mayfair Hotel</h2>
-            <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span>Order Number:</span>
-              <span className="font-medium">{order.order_number}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Table:</span>
-              <span className="font-medium">{order.table_number}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Customer:</span>
-              <span className="font-medium">{order.first_name} {order.last_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Date:</span>
-              <span className="font-medium">{new Date(order.placed_at).toLocaleString()}</span>
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <h4 className="font-medium mb-2">Items:</h4>
-            <div className="space-y-1 text-sm">
-              {order.items?.map(item => (
-                <div key={item.id} className="flex justify-between">
-                  <span>{item.quantity}x {item.item_name}</span>
-                  <span>₹{parseFloat(item.total_price).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t pt-4 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span>Subtotal:</span>
-              <span>₹{parseFloat(order.total_amount).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tax:</span>
-              <span>₹{parseFloat(order.tax_amount || 0).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Total:</span>
-              <span>₹{parseFloat(order.total_amount + (order.tax_amount || 0)).toFixed(2)}</span>
-            </div>
-          </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Table:</span>
+          <span className="font-medium">{order.table_number || "N/A"}</span>
         </div>
-
-        <div className="mt-6 flex space-x-3">
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
-          >
-            Close
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
-          >
-            Print Bill
-          </button>
+        
+        <div className="flex justify-between">
+          <span className="text-gray-600">Customer:</span>
+          <span className="font-medium">
+            {order.first_name} {order.last_name}
+          </span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span className="text-gray-600">Date:</span>
+          <span className="font-medium">
+            {new Date(order.placed_at).toLocaleString()}
+          </span>
         </div>
       </div>
+
+      {/* Items */}
+      <div className="border-t pt-4">
+        <h4 className="font-medium mb-3 text-lg">Items</h4>
+        <div className="divide-y text-sm">
+          {order.items?.map((item) => (
+            <div key={item.id} className="flex justify-between py-1">
+              <span>{item.quantity}× {item.item_name}</span>
+              <span>₹{parseFloat(item.total_price).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Totals */}
+      <div className="border-t pt-4 space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-600">Subtotal:</span>
+          <span>₹{parseFloat(order.total_amount).toFixed(2)}</span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span className="text-gray-600">Tax:</span>
+          <span>₹{parseFloat(order.tax_amount || 0).toFixed(2)}</span>
+        </div>
+        
+        <div className="flex justify-between font-bold text-xl border-t pt-3">
+          <span>Total:</span>
+          <span>   ₹{(
+        (parseFloat(order.total_amount) || 0) +
+        (parseFloat(order.tax_amount) || 0)
+      ).toFixed(2)}</span>
+        </div>
+      </div>
+      
     </div>
+
+    {/* Footer Buttons */}
+    <div className="mt-8 flex space-x-4">
+      <button
+        onClick={onClose}
+        className="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-100"
+      >
+        Close
+      </button>
+      
+      <button
+        onClick={handlePrint}
+        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700"
+      >
+        Print Bill
+      </button>
+    </div>
+    
+  </div>
+</div>
     
   );
 };

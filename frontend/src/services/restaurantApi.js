@@ -100,7 +100,7 @@ export const kitchenApi = {
   // Get kitchen orders
   getKitchenOrders: async (kitchenId, status = null) => {
     const params = status ? { status } : {};
-    const response = await api.get(`/restaurant/kitchens/${kitchenId}/orders`, { params });
+    const response = await api.get(`/restaurant/kitchen/${kitchenId}/orders`, { params });
     return response.data.data;
   },
 
@@ -109,13 +109,13 @@ export const kitchenApi = {
     const data = {};
     if (estimatedTime) data.estimated_time = estimatedTime;
     if (notes) data.notes = notes;
-    const response = await api.post(`/restaurant/kitchens/${kitchenId}/orders/${orderId}/accept`, data);
+    const response = await api.post(`/restaurant/kitchen/${kitchenId}/orders/${orderId}/accept`, data);
     return response.data.data;
   },
 
   // Reject kitchen order
   rejectKitchenOrder: async (kitchenId, orderId, reason) => {
-    const response = await api.post(`/restaurant/kitchens/${kitchenId}/orders/${orderId}/reject`, { reason });
+    const response = await api.post(`/restaurant/kitchen/${kitchenId}/orders/${orderId}/reject`, { reason });
     return response.data.data;
   },
 
@@ -381,11 +381,17 @@ export const restaurantOrderApi = {
     return response.data.data;
   },
 
-
+  // Get kitchen dashboard data
+  getKitchenDashboard: async (restaurantId = null) => {
+    const params = {};
+    if (restaurantId) params.restaurant_id = restaurantId;
+    const response = await api.get('/restaurant/kitchen/dashboard', { params });
+    return response.data.data;
+  },
 
   // Add items to order
   addOrderItems: async (id, items) => {
-    const response = await api.post(`/restaurant/orders/${id}/items`, items);
+    const response = await api.put(`/restaurant/orders/${id}/items`, { items });
     return response.data.data;
   },
 

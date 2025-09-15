@@ -20,7 +20,15 @@ const OrdersPage = () => {
   // Custom date range
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
+const [selectedOrder, setSelectedOrder] = useState(null);
 
+const handleViewOrder = (order) => {
+  setSelectedOrder(order);
+};
+
+const handleCloseModal = () => {
+  setSelectedOrder(null);
+};
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -407,6 +415,9 @@ const OrdersPage = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Time
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      invoice
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -470,15 +481,117 @@ const OrdersPage = () => {
                           {new Date(order.placed_at || order.created_at).toLocaleDateString()}
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap ">
+       {order.status === "billed" && (
+    <button
+      onClick={() => handleViewOrder(order)}
+      className="px-5 py-2 rounded-full border border-indigo-600 text-indigo-600 
+             font-medium shadow-sm
+             hover:bg-indigo-600 hover:text-white 
+             active:scale-95
+             transition-all duration-300 ease-in-out"
+    >
+      View
+    </button>
+  )}
+      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+          {selectedOrder && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-semibold text-gray-900">
+          Bill - Order #{selectedOrder.order_number}
+        </h3>
+        <button
+          onClick={handleCloseModal}
+          className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        {/* Hotel Info */}
+        <div className="text-center border-b pb-4">
+          <h2 className="text-2xl font-bold">Mayfair Hotel</h2>
+          <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
         </div>
+
+        {/* Order Details */}
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Order Number:</span>
+            <span className="font-medium">{selectedOrder.order_number}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Table:</span>
+            <span className="font-medium">{selectedOrder.table_number || "N/A"}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Customer:</span>
+            <span className="font-medium">
+              {selectedOrder.first_name} {selectedOrder.last_name}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Date:</span>
+            <span className="font-medium">
+              {new Date(selectedOrder.placed_at).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        {/* Items */}
+        <div className="border-t pt-4">
+          <h4 className="font-medium mb-3 text-lg">Items</h4>
+          <div className="divide-y text-sm">
+            {selectedOrder.items?.map((item) => (
+              <div key={item.id} className="flex justify-between py-1">
+                <span>{item.quantity}× {item.item_name}</span>
+                <span>₹{parseFloat(item.total_price).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Totals */}
+        <div className="border-t pt-4 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Subtotal:</span>
+            <span>₹{parseFloat(selectedOrder.total_amount).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Tax:</span>
+            <span>₹{parseFloat(selectedOrder.tax_amount || 0).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-bold text-xl border-t pt-3">
+            <span>Total:</span>
+            <span>
+                ₹{(
+        (parseFloat(selectedOrder.total_amount) || 0) +
+        (parseFloat(selectedOrder.tax_amount) || 0)
+      ).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+        </div>
+        
       )}
     </div>
+    
   );
 };
 

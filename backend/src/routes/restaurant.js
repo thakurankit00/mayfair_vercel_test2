@@ -236,7 +236,7 @@ router.post('/kitchens/:kitchenId/staff', authenticateToken, requireRole(['manag
 router.delete('/kitchens/:kitchenId/staff/:userId/:role', authenticateToken, requireRole(['manager', 'admin']), removeStaffFromKitchen);
 
 // Get kitchen orders (Kitchen Staff+)
-router.get('/kitchens/:kitchenId/orders', authenticateToken, getKitchenOrders);
+router.get('/kitchen/:kitchenId/orders', authenticateToken, getKitchenOrders);
 
 // General kitchen dashboard (Chef/Bartender+) - doesn't require specific kitchen ID
 router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), async (req, res) => {
@@ -341,7 +341,7 @@ router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'barten
 
 /**
  * @swagger
- * /api/v1/restaurant/kitchens/{kitchenId}/orders/{orderId}/accept:
+ * /api/v1/restaurant/kitchen/{kitchenId}/orders/{orderId}/accept:
  *   post:
  *     summary: Accept order in kitchen
  *     tags: [Kitchen]
@@ -381,10 +381,10 @@ router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'barten
  *         description: Order not found
  */
 // Accept kitchen order (Chef/Bartender+)
-router.post('/kitchens/:kitchenId/orders/:orderId/accept', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), acceptKitchenOrder);
+router.post('/kitchen/:kitchenId/orders/:orderId/accept', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), acceptKitchenOrder);
 
 // Reject kitchen order (Chef/Bartender+)
-router.post('/kitchens/:kitchenId/orders/:orderId/reject', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), rejectKitchenOrder);
+router.post('/kitchen/:kitchenId/orders/:orderId/reject', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), rejectKitchenOrder);
 
 // Transfer order to different kitchen (Waiter+)
 router.post('/orders/:orderId/transfer', authenticateToken, requireRole(['waiter', 'manager', 'admin']), transferOrderToKitchen);
