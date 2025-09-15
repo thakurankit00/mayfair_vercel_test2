@@ -59,7 +59,15 @@ const WaiterOrderInterface = () => {
         ]);
         
         setRestaurants(restaurantsData.restaurants || []);
-        setCurrentOrders(ordersData.orders || []);
+
+        // Sort orders by latest activity (updated_at or created_at)
+        const sortedOrders = (ordersData.orders || []).sort((a, b) => {
+          const aTime = new Date(a.updated_at || a.created_at);
+          const bTime = new Date(b.updated_at || b.created_at);
+          return bTime - aTime; // Most recent first
+        });
+
+        setCurrentOrders(sortedOrders);
         
         if (restaurantsData.restaurants.length > 0) {
           setSelectedRestaurant(restaurantsData.restaurants[0].id);
@@ -74,57 +82,53 @@ const WaiterOrderInterface = () => {
     loadInitialData();
   }, [user.id, user.role]);
 
-  // Socket listener for item status updates
-  const { socket } = useSocket();
-
+  // Listen for socket notifications and refresh orders when items are updated
   useEffect(() => {
-    if (socket) {
-      const handleItemStatusUpdate = (data) => {
-        const { orderId, orderNumber, itemId, status } = data;
+    console.log('🔍 [WAITER] Checking notifications for order updates');
+    console.log('🔍 [WAITER] Total notifications:', notifications.length);
 
-        // Show notification for ready items
-        if (status === 'ready' || status === 'ready_to_serve') {
-          // Create a notification
-          const notification = {
-            id: `item-ready-${itemId}-${Date.now()}`,
-            type: 'success',
-            title: 'Item Ready!',
-            message: `Item in Order #${orderNumber} is ready for pickup`,
-            timestamp: new Date(),
-            orderId,
-            itemId
-          };
+    // Check for new item status notifications that haven't been processed
+    const itemUpdateNotifications = notifications.filter(notif =>
+      notif.type === 'order-update' &&
+      !notif.read &&
+      (notif.message.includes('ready') || notif.message.includes('preparing'))
+    );
 
-          // You can add this to a notifications state or show a toast
-          console.log('Item ready notification:', notification);
+    if (itemUpdateNotifications.length > 0) {
+      console.log('🔍 [WAITER] Found item update notifications:', itemUpdateNotifications.length);
 
-          // Refresh current orders to show updated status
-          if (currentOrders.some(order => order.id === orderId)) {
-            // Reload orders to get updated status
-            const loadOrders = async () => {
-              try {
-                const orderFilters = { status: ['pending', 'preparing', 'ready'] };
-                if (user.role === 'waiter') {
-                  orderFilters.waiter_id = user.id;
-                }
-                const ordersData = await restaurantOrderApi.getOrders(orderFilters);
-                setCurrentOrders(ordersData.orders || []);
-              } catch (err) {
-                console.error('Failed to refresh orders:', err);
-              }
-            };
-            loadOrders();
+      // Refresh orders to show updated status
+      const loadOrders = async () => {
+        try {
+          console.log('🔄 [WAITER] Refreshing orders due to item status update');
+          const orderFilters = { status: ['pending', 'preparing', 'ready'] };
+          if (user.role === 'waiter') {
+            orderFilters.waiter_id = user.id;
           }
+          const ordersData = await restaurantOrderApi.getOrders(orderFilters);
+
+          // Sort orders by latest activity (updated_at or created_at)
+          const sortedOrders = (ordersData.orders || []).sort((a, b) => {
+            const aTime = new Date(a.updated_at || a.created_at);
+            const bTime = new Date(b.updated_at || b.created_at);
+            return bTime - aTime; // Most recent first
+          });
+
+          setCurrentOrders(sortedOrders);
+
+          // Mark notifications as read
+          itemUpdateNotifications.forEach(notif => {
+            markNotificationAsRead(notif.id);
+          });
+
+          console.log('✅ [WAITER] Orders refreshed and notifications marked as read');
+        } catch (err) {
+          console.error('❌ [WAITER] Failed to refresh orders:', err);
         }
       };
-
-      socket.on('order-item-status-updated', handleItemStatusUpdate);
-
-      return () => {
-        socket.off('order-item-status-updated', handleItemStatusUpdate);
-      };
+      loadOrders();
     }
-  }, [socket, currentOrders, user.id, user.role]);
+  }, [notifications, user.id, user.role, markNotificationAsRead]);
 
   // Load restaurant-specific data
   useEffect(() => {
@@ -316,7 +320,15 @@ const WaiterOrderInterface = () => {
 
       // Refresh current orders list
       const ordersData = await restaurantOrderApi.getOrders();
-      setCurrentOrders(ordersData.orders || []);
+
+      // Sort orders by latest activity (updated_at or created_at)
+      const sortedOrders = (ordersData.orders || []).sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at);
+        const bTime = new Date(b.updated_at || b.created_at);
+        return bTime - aTime; // Most recent first
+      });
+
+      setCurrentOrders(sortedOrders);
 
       // Refresh tables to update status (available -> has orders)
       if (selectedRestaurant) {
@@ -1033,6 +1045,8 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
               order.status === 'served' ? 'bg-green-100 text-green-800' :
               order.status === 'paid' ? 'bg-blue-100 text-blue-800' :
+              order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+              order.status === 'ready' ? 'bg-yellow-100 text-yellow-800' :
               'bg-gray-100 text-gray-800'
             }`}>
               {order.status}
@@ -1058,6 +1072,27 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
           {userRole === 'admin' && (order.waiter_first_name || order.waiter_last_name) && (
             <div className="mb-3 text-sm text-gray-600">
               <span className="font-medium">Served by:</span> {order.waiter_first_name} {order.waiter_last_name}
+            </div>
+          )}
+
+          {/* Rejection/Cancellation Notes */}
+          {order.status === 'cancelled' && order.special_instructions && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <span className="text-red-600 text-sm">⚠️</span>
+                <div>
+                  <p className="text-sm font-medium text-red-800">Order Cancelled</p>
+                  <p className="text-sm text-red-700 mt-1">{order.special_instructions}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Special Instructions for other statuses */}
+          {order.status !== 'cancelled' && order.special_instructions && (
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-medium text-blue-800">Special Instructions:</p>
+              <p className="text-sm text-blue-700 mt-1">{order.special_instructions}</p>
             </div>
           )}
           

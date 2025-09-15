@@ -13,6 +13,25 @@ import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
 import ChefDashboard from './components/kitchen/ChefDashboard';
 import UserManagement from './components/admin/UserManagement';
 import OrdersPage from './components/orders/OrdersPage';
+import NotificationContainer from './components/common/NotificationToast';
+import PopupNotification from './components/common/PopupNotification';
+import { useSocket } from './contexts/SocketContext';
+
+// Notification wrapper component
+const AppWithNotifications = ({ children }) => {
+  const { toastNotifications, removeToastNotification } = useSocket();
+
+  return (
+    <>
+      {children}
+      <PopupNotification />
+      <NotificationContainer
+        notifications={toastNotifications}
+        onRemoveNotification={removeToastNotification}
+      />
+    </>
+  );
+};
 
 // Placeholder components for routes that aren't built yet
 const PlaceholderPage = ({ title }) => (
@@ -34,9 +53,10 @@ const App = () => {
     <ErrorBoundary>
       <AuthProvider>
         <SocketProvider>
-          <Router>
-            <div className="App">
-            <Routes>
+          <AppWithNotifications>
+            <Router>
+              <div className="App">
+              <Routes>
               {/* Public routes */}
               <Route 
                 path="/login" 
@@ -242,9 +262,10 @@ const App = () => {
                   </div>
                 } 
               />
-            </Routes>
-            </div>
-          </Router>
+              </Routes>
+              </div>
+            </Router>
+          </AppWithNotifications>
         </SocketProvider>
       </AuthProvider>
     </ErrorBoundary>

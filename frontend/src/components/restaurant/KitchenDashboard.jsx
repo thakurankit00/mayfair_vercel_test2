@@ -48,7 +48,15 @@ const KitchenDashboard = () => {
       
       try {
         const data = await kitchenApi.getKitchenOrders(selectedKitchen);
-        setOrders(data.orders || []);
+
+        // Sort orders by latest activity (updated_at or created_at)
+        const sortedOrders = (data.orders || []).sort((a, b) => {
+          const aTime = new Date(a.updated_at || a.created_at);
+          const bTime = new Date(b.updated_at || b.created_at);
+          return bTime - aTime; // Most recent first
+        });
+
+        setOrders(sortedOrders);
       } catch (err) {
         setError(err.message || 'Failed to fetch kitchen orders');
       }
@@ -71,7 +79,15 @@ const KitchenDashboard = () => {
       
       // Refresh orders
       const data = await kitchenApi.getKitchenOrders(selectedKitchen);
-      setOrders(data.orders || []);
+
+      // Sort orders by latest activity (updated_at or created_at)
+      const sortedOrders = (data.orders || []).sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at);
+        const bTime = new Date(b.updated_at || b.created_at);
+        return bTime - aTime; // Most recent first
+      });
+
+      setOrders(sortedOrders);
     } catch (err) {
       setError(err.message || 'Failed to accept order');
     } finally {
@@ -86,7 +102,15 @@ const KitchenDashboard = () => {
       
       // Refresh orders
       const data = await kitchenApi.getKitchenOrders(selectedKitchen);
-      setOrders(data.orders || []);
+
+      // Sort orders by latest activity (updated_at or created_at)
+      const sortedOrders = (data.orders || []).sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at);
+        const bTime = new Date(b.updated_at || b.created_at);
+        return bTime - aTime; // Most recent first
+      });
+
+      setOrders(sortedOrders);
     } catch (err) {
       setError(err.message || 'Failed to reject order');
     } finally {

@@ -232,7 +232,16 @@ const createOrder = async (req, res) => {
       
       // Emit Socket.io event for new order
       const socketHandler = req.app.get('socketHandler');
+      console.log('📦 [ORDER] Socket handler available:', !!socketHandler);
       if (socketHandler) {
+        console.log('📦 [ORDER] Emitting new order event:', {
+          orderId,
+          orderNumber,
+          tableId: table_id,
+          tableNumber: table.table_name,
+          kitchenTypes: [order_type],
+          waiterId: userRole === 'waiter' ? userId : null
+        });
         socketHandler.emitNewOrder({
           orderId,
           orderNumber,
@@ -247,6 +256,8 @@ const createOrder = async (req, res) => {
           restaurantId: finalRestaurantId,
           targetKitchenId: finalTargetKitchenId
         });
+      } else {
+        console.log('❌ [ORDER] Socket handler not available');
       }
       
       // Get complete order details
@@ -327,7 +338,12 @@ const getOrders = async (req, res) => {
     
     // Apply filters
     if (status) {
-      query = query.where('o.status', status);
+      // Handle both single status and array of statuses
+      if (Array.isArray(status)) {
+        query = query.whereIn('o.status', status);
+      } else {
+        query = query.where('o.status', status);
+      }
     }
     
     if (order_type) {
@@ -515,15 +531,16 @@ const updateOrderStatus = async (req, res) => {
       .where('id', id)
       .update(updateData)
       .returning('*');
+    // Emit socket event for order status update
     const socketHandler = req.app.get('socketHandler');
     if (socketHandler) {
-  socketHandler.emitOrderStatusUpdate({
-    orderId: id,
-    orderNumber: existingOrder.order_number,
-    itemId,
-    status,
-    updatedBy: userId,
-     waiterId: existingOrder.waiter_id
+      socketHandler.emitOrderStatusUpdate({
+        orderId: id,
+        orderNumber: existingOrder.order_number,
+        status,
+        userId,
+        userRole,
+        waiterId: existingOrder.waiter_id
       });
     }
 
@@ -566,12 +583,12 @@ const updateOrderItemStatus = async (req, res) => {
       });
     }
     
-    if (!status || !['pending', 'accepted', 'preparing', 'ready_to_serve'].includes(status)) {
+    if (!status || !['pending', 'accepted', 'preparing', 'ready_to_serve', 'ready'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Valid status is required (pending, accepted, preparing, ready_to_serve)'
+          message: 'Valid status is required (pending, accepted, preparing, ready_to_serve, ready)'
         }
       });
     }
@@ -632,7 +649,7 @@ const updateOrderItemStatus = async (req, res) => {
         orderId,
         orderNumber: order.order_number,
         itemId,
-        status,
+        status: dbStatus, // Use the mapped database status
         chefNotes: chef_notes,
         updatedBy: userId,
         updatedByRole: userRole,
@@ -777,8 +794,17 @@ const addOrderItems = async (req, res) => {
           updated_at: new Date()
         });
       
+      // Reset order status to 'pending' when new items are added
+      // This ensures the kitchen needs to re-accept the order
+      await trx('orders')
+        .where('id', id)
+        .update({
+          status: 'pending',
+          updated_at: new Date()
+        });
+
       await trx.commit();
-      
+
       // Get updated order details
       const updatedOrder = await getOrderDetails(id);
 
@@ -789,7 +815,17 @@ const addOrderItems = async (req, res) => {
       }))];
 
       const socketHandler = req.app.get('socketHandler');
+      console.log('📦 [ADD_ITEMS] Socket handler available:', !!socketHandler);
       if (socketHandler) {
+        console.log('📦 [ADD_ITEMS] Emitting add items event:', {
+          orderId: id,
+          orderNumber: existingOrder.order_number,
+          tableId: existingOrder.table_id,
+          tableNumber: updatedOrder.table?.table_number,
+          waiterId: existingOrder.waiter_id,
+          newItems: validatedItems.length,
+          kitchenTypes: kitchenTypes
+        });
         socketHandler.handleAddOrderItems({
           orderId: id,
           orderNumber: existingOrder.order_number,
@@ -800,6 +836,8 @@ const addOrderItems = async (req, res) => {
           newItems: validatedItems,
           kitchenTypes: kitchenTypes
         });
+      } else {
+        console.log('❌ [ADD_ITEMS] Socket handler not available');
       }
       return res.status(200).json({
         success: true,

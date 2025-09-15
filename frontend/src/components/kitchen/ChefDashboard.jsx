@@ -325,6 +325,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder
         return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'preparing':
         return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'ready':
       case 'ready_to_serve':
         return 'bg-green-100 text-green-800 border-green-200';
       default:
@@ -340,6 +341,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder
         return 'Accepted';
       case 'preparing':
         return 'Preparing';
+      case 'ready':
       case 'ready_to_serve':
         return 'Ready to Serve';
       default:
@@ -554,7 +556,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder
                     
                     {item.status === 'preparing' && (
                       <button
-                        onClick={() => onUpdateItemStatus(order.id, item.id, 'ready_to_serve', chefNotes[item.id] || '')}
+                        onClick={() => onUpdateItemStatus(order.id, item.id, 'ready', chefNotes[item.id] || '')}
                         disabled={updateLoading[item.id]}
                         className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
                       >
@@ -562,7 +564,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder
                       </button>
                     )}
 
-                    {item.status === 'ready_to_serve' && (
+                    {(item.status === 'ready' || item.status === 'ready_to_serve') && (
                       <span className="inline-flex items-center px-3 py-2 text-sm font-medium text-green-800 bg-green-100 rounded-md">
                         ✅ Ready for pickup
                       </span>
