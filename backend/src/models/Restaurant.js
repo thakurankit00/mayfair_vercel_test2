@@ -163,12 +163,14 @@ class Restaurant extends BaseModel {
 
   // Check if user has access to this restaurant
   async hasUserAccess(userId, requiredRole = null) {
-    let query = Restaurant.relatedQuery('staff', this)
-      .where('users.id', userId)
+    const query = Restaurant.knex()('restaurant_staff')
+      .join('users', 'restaurant_staff.user_id', 'users.id')
+      .where('restaurant_staff.restaurant_id', this.id)
+      .where('restaurant_staff.user_id', userId)
       .where('restaurant_staff.is_active', true);
 
     if (requiredRole) {
-      query = query.where('restaurant_staff.role', requiredRole);
+      query.where('restaurant_staff.role', requiredRole);
     }
 
     const staffRecord = await query.first();
