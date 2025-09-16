@@ -266,10 +266,10 @@ export const paymentApi = {
   // Create payment intent
   createPaymentIntent: async (paymentData) => {
     try {
-      const response = await apiClient.post('/payments/create-intent', paymentData);
-      return response.data;
+      const response = await api.post('/payments/create-intent', paymentData);
+      return response;
     } catch (error) {
-      console.error('Create payment intent error:', error);
+      console.error('Create payment intent error: - api.js:272', error);
       throw error;
     }
   },
@@ -277,10 +277,10 @@ export const paymentApi = {
   // Get payment status
   getPaymentStatus: async (paymentId) => {
     try {
-      const response = await apiClient.get(`/payments/${paymentId}/status`);
-      return response.data;
+      const response = await api.get(`/payments/${paymentId}/status`);
+      return response;
     } catch (error) {
-      console.error('Get payment status error:', error);
+      console.error('Get payment status error: - api.js:283', error);
       throw error;
     }
   },
@@ -288,10 +288,10 @@ export const paymentApi = {
   // Get payment history
   getPaymentHistory: async (params = {}) => {
     try {
-      const response = await apiClient.get('/payments/history', { params });
-      return response.data;
+      const response = await api.get('/payments/history', { params });
+      return response;
     } catch (error) {
-      console.error('Get payment history error:', error);
+      console.error('Get payment history error: - api.js:294', error);
       throw error;
     }
   },
@@ -299,10 +299,10 @@ export const paymentApi = {
   // Verify payment
   verifyPayment: async (paymentId) => {
     try {
-      const response = await apiClient.post(`/payments/${paymentId}/verify`);
-      return response.data;
+      const response = await api.post(`/payments/${paymentId}/verify`);
+      return response;
     } catch (error) {
-      console.error('Verify payment error:', error);
+      console.error('Verify payment error: - api.js:305', error);
       throw error;
     }
   },
@@ -310,14 +310,16 @@ export const paymentApi = {
   // Get payment form URL
   getPaymentForm: async (paymentId) => {
     try {
-      const response = await apiClient.get(`/payments/${paymentId}/form`);
-      return response.data;
+      const response = await api.get(`/payments/${paymentId}/form`);
+      return response;
     } catch (error) {
-      console.error('Get payment form error:', error);
+      console.error('Get payment form error: - api.js:316', error);
       throw error;
     }
   }
 };
+
+
 
 // Restaurant API - now properly implemented
 export const restaurantApiService = {

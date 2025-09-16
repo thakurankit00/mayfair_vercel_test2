@@ -32,7 +32,6 @@ const WaiterOrderInterface = () => {
     email: ''
   });
   const [specialInstructions, setSpecialInstructions] = useState('');
-  
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,283 +46,17 @@ const WaiterOrderInterface = () => {
     const loadInitialData = async () => {
       try {
         setLoading(true);
-        
         // Build order filters based on user role
         const orderFilters = {};
-        
         // If user is a waiter, only show their orders
         // Admin and manager can see all orders
         if (user.role === 'waiter') {
           orderFilters.waiter_id = user.id;
         }
-        
-        const [restaurantsData, ordersData] = await Promise.all([
-          restaurantApi.getRestaurants(),
-          restaurantOrderApi.getOrders(orderFilters)
-        ]);
-        
-        setRestaurants(restaurantsData.restaurants || []);
-
-        // Sort orders by latest activity (updated_at or created_at)
-        const sortedOrders = (ordersData.orders || []).sort((a, b) => {
-          const aTime = new Date(a.updated_at || a.created_at);
-          const bTime = new Date(b.updated_at || b.created_at);
-          return bTime - aTime; // Most recent first
-        });
-
-        setCurrentOrders(sortedOrders);
-        
-        if (restaurantsData.restaurants.length > 0) {
-          setSelectedRestaurant(restaurantsData.restaurants[0].id);
-        }
-      } catch (err) {
-        setError(err.message || 'Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, [user.id, user.role]);
-
-  // Listen for socket notifications and refresh orders when items are updated
-  useEffect(() => {
-    console.log('🔍 [WAITER] Checking notifications for order updates');
-    console.log('🔍 [WAITER] Total notifications:', notifications.length);
-
-    // Check for new item status notifications that haven't been processed
-    const itemUpdateNotifications = notifications.filter(notif =>
-      notif.type === 'order-update' &&
-      !notif.read &&
-      (notif.message.includes('ready') || notif.message.includes('preparing'))
-    );
-
-    if (itemUpdateNotifications.length > 0) {
-      console.log('🔍 [WAITER] Found item update notifications:', itemUpdateNotifications.length);
-
-      // Refresh orders to show updated status
-      const loadOrders = async () => {
-        try {
-          console.log('🔄 [WAITER] Refreshing orders due to item status update');
-          const orderFilters = { status: ['pending', 'preparing', 'ready'] };
-          if (user.role === 'waiter') {
-            orderFilters.waiter_id = user.id;
-          }
-          const ordersData = await restaurantOrderApi.getOrders(orderFilters);
-
-          // Sort orders by latest activity (updated_at or created_at)
-          const sortedOrders = (ordersData.orders || []).sort((a, b) => {
-            const aTime = new Date(a.updated_at || a.created_at);
-            const bTime = new Date(b.updated_at || b.created_at);
-            return bTime - aTime; // Most recent first
-          });
-
-          setCurrentOrders(sortedOrders);
-
-          // Mark notifications as read
-          itemUpdateNotifications.forEach(notif => {
-            markNotificationAsRead(notif.id);
-          });
-
-          console.log('✅ [WAITER] Orders refreshed and notifications marked as read');
-        } catch (err) {
-          console.error('❌ [WAITER] Failed to refresh orders:', err);
-        }
-      };
-      loadOrders();
-    }
-  }, [notifications, user.id, user.role, markNotificationAsRead]);
-
-  // Load restaurant-specific data
-  useEffect(() => {
-    const loadRestaurantData = async () => {
-      if (!selectedRestaurant) return;
-      
-      try {
-        const [tablesData, menuData] = await Promise.all([
-          restaurantTableApi.getTables(selectedRestaurant),
-          restaurantMenuApi.getMenu(selectedRestaurant)
-        ]);
-        
-        setTables(tablesData.tables || []);
-        setMenu(menuData.menu || []);
-      } catch (err) {
-        setError(err.message || 'Failed to load restaurant data');
-      }
-    };
-
-    loadRestaurantData();
-  }, [selectedRestaurant]);
-
-  const startNewOrder = (table) => {
-    setSelectedTable(table);
-    setActiveOrder({
-      tableId: table.id,
-      tableName: table.table_name,
-      restaurantId: selectedRestaurant,
-      rounds: [{
-        id: 1,
-        items: [],
-        timestamp: new Date(),
-        status: 'building'
-      }]
-    });
-    setCart([]);
-    setCustomerInfo({ firstName: '', lastName: '', phone: '', email: '' });
-    setSpecialInstructions('');
-  };
-
-  const addItemToCart = (item, quantity = 1) => {
-    const cartItem = {
-      id: Date.now(),
-      menuItemId: item.id,
-      name: item.name,
-      price: item.price,
-      quantity,
-      specialInstructions: '',
-      kitchenType: item.kitchen_type || (item.category_type === 'bar' ? 'bar' : 'restaurant')
-    };
-    
-    setCart(prev => [...prev, cartItem]);
-  };
-
-  const updateCartItem = (cartItemId, updates) => {
-    setCart(prev => 
-      prev.map(item => 
-        item.id === cartItemId ? { ...item, ...updates } : item
-      )
-    );
-  };
-
-  const removeFromCart = (cartItemId) => {
-    setCart(prev => prev.filter(item => item.id !== cartItemId));
-  };
-
-  const addNewRound = () => {
-    if (!activeOrder) return;
-    
-    const newRound = {
-      id: activeOrder.rounds.length + 1,
-      items: [],
-      timestamp: new Date(),
-      status: 'building'
-    };
-    
-    setActiveOrder(prev => ({
-      ...prev,
-      rounds: [...prev.rounds, newRound]
-    }));
-    setCart([]);
-  };
-
-  const submitOrderRound = async () => {
-    if (!activeOrder || cart.length === 0) return;
-    
-    try {
-      setLoading(true);
-      
-      // Group items by kitchen type for proper routing
-      const kitchenGroups = cart.reduce((groups, item) => {
-        const kitchen = item.kitchenType || 'restaurant';
-        if (!groups[kitchen]) groups[kitchen] = [];
-        groups[kitchen].push(item);
-        return groups;
-      }, {});
-
-      // Ensure kitchenGroups has at least one entry
-      if (Object.keys(kitchenGroups).length === 0) {
-        kitchenGroups['restaurant'] = [];
-      }
-
-      // Check if this is adding items to an existing order
-      const isExistingOrder = activeOrder.latestOrderId || (activeOrder.rounds && activeOrder.rounds[0]?.orderId);
-      
-      if (isExistingOrder) {
-        // Add items to existing order
-        const existingOrderId = activeOrder.latestOrderId || activeOrder.rounds[0].orderId;
-        const newItems = cart.map(item => ({
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          specialInstructions: item.specialInstructions,
-          price: item.price
-        }));
-        
-        await restaurantOrderApi.addItemsToOrder(existingOrderId, { items: newItems });
-        
-        // Add new round to existing order
-        const newRound = {
-          id: activeOrder.rounds.length + 1,
-          items: cart,
-          timestamp: new Date(),
-          status: 'submitted',
-          orderId: existingOrderId,
-          orderNumber: activeOrder.rounds[0]?.orderNumber
-        };
-        
-        setActiveOrder(prev => ({
-          ...prev,
-          rounds: [...prev.rounds, newRound]
-        }));
-        
-        // Emit socket event for order items added
-        emitEvent('order-items-added', {
-          orderId: existingOrderId,
-          newItems,
-          kitchenTypes: Object.keys(kitchenGroups)
-        });
-        
-      } else {
-        // Create new order
-        const orderData = {
-          restaurant_id: selectedRestaurant,
-          table_id: selectedTable.id,
-          order_type: 'dine_in', // Default to dine_in for waiter orders
-          customerInfo,
-          special_instructions: specialInstructions,
-          items: cart.map(item => ({
-            menuItemId: item.menuItemId,
-            quantity: item.quantity,
-            specialInstructions: item.specialInstructions,
-            price: item.price
-          })),
-          kitchenRouting: Object.keys(kitchenGroups),
-          roundNumber: activeOrder.rounds.length
-        };
-
-        const response = await restaurantOrderApi.createOrder(orderData);
-        
-        // Update active order with submitted round for new orders
-        const submittedRound = {
-          ...activeOrder.rounds[activeOrder.rounds.length - 1],
-          items: cart,
-          status: 'submitted',
-          orderId: response.order.id,
-          orderNumber: response.order.order_number
-        };
-        
-        setActiveOrder(prev => ({
-          ...prev,
-          rounds: [
-            ...prev.rounds.slice(0, -1),
-            submittedRound
-          ],
-          latestOrderId: response.order.id
-        }));
-        
-        // Emit socket event for new order
-        emitEvent('new-order-submitted', {
-          orderId: response.order.id,
-          orderNumber: response.order.order_number,
-          tableId: selectedTable.id,
-          kitchenTypes: Object.keys(kitchenGroups)
-        });
-      }
-      
-      // Clear current cart but keep order session active
-      setCart([]);
-
-      // Refresh current orders list
-      const ordersData = await restaurantOrderApi.getOrders();
+      const [restaurantsData, ordersData] = await Promise.all([
+        restaurantApi.getRestaurants(),
+        restaurantOrderApi.getOrders(orderFilters)
+      ]);
 
       // Sort orders by latest activity (updated_at or created_at)
       const sortedOrders = (ordersData.orders || []).sort((a, b) => {
@@ -332,6 +65,7 @@ const WaiterOrderInterface = () => {
         return bTime - aTime; // Most recent first
       });
 
+      setRestaurants(restaurantsData.restaurants || []);
       setCurrentOrders(sortedOrders);
 
       // Refresh tables to update status (available -> has orders)
@@ -341,11 +75,165 @@ const WaiterOrderInterface = () => {
       }
 
     } catch (err) {
-      setError(err.message || 'Failed to submit order');
+      setError(err.message || 'Failed to load initial data');
     } finally {
       setLoading(false);
     }
   };
+
+  loadInitialData();
+}, [user.id, user.role]);
+
+// Load restaurant-specific data when restaurant is selected
+useEffect(() => {
+  const loadRestaurantData = async () => {
+    if (!selectedRestaurant) {
+      setTables([]);
+      setMenu([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const [tablesData, menuData] = await Promise.all([
+        restaurantTableApi.getTables(selectedRestaurant),
+        restaurantMenuApi.getMenu(selectedRestaurant)
+      ]);
+
+      setTables(tablesData.tables || []);
+      setMenu(menuData.menu || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load restaurant data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  loadRestaurantData();
+}, [selectedRestaurant]);
+
+// Load orders function
+const loadOrders = async () => {
+  try {
+    const orderFilters = {};
+    if (user.role === 'waiter') {
+      orderFilters.waiter_id = user.id;
+    }
+    
+    const ordersData = await restaurantOrderApi.getOrders(orderFilters);
+    const sortedOrders = (ordersData.orders || []).sort((a, b) => {
+      const aTime = new Date(a.updated_at || a.created_at);
+      const bTime = new Date(b.updated_at || b.created_at);
+      return bTime - aTime;
+    });
+    
+    setCurrentOrders(sortedOrders);
+  } catch (err) {
+    setError(err.message || 'Failed to load orders');
+  }
+};
+
+// Start new order for a table
+const startNewOrder = (table) => {
+  setSelectedTable(table);
+  setActiveOrder({
+    tableId: table.id,
+    tableName: table.table_name || `Table ${table.table_number}`,
+    restaurantId: selectedRestaurant,
+    rounds: []
+  });
+  setCart([]);
+};
+
+// Add item to cart
+const addItemToCart = (item) => {
+  const existingItem = cart.find(cartItem => cartItem.id === item.id);
+  if (existingItem) {
+    updateCartItem(item.id, { quantity: existingItem.quantity + 1 });
+  } else {
+    setCart([...cart, { ...item, quantity: 1, specialInstructions: '' }]);
+  }
+};
+
+// Update cart item
+const updateCartItem = (itemId, updates) => {
+  setCart(cart.map(item => 
+    item.id === itemId ? { ...item, ...updates } : item
+  ));
+};
+
+// Remove item from cart
+const removeFromCart = (itemId) => {
+  setCart(cart.filter(item => item.id !== itemId));
+};
+
+// Add new round to order
+const addNewRound = () => {
+  setCart([]);
+  setSpecialInstructions('');
+};
+
+// Submit order round
+const submitOrderRound = async () => {
+  if (cart.length === 0) return;
+
+  try {
+    setLoading(true);
+    
+    const orderData = {
+      restaurant_id: selectedRestaurant,
+      table_id: activeOrder.tableId,
+      customer_info: customerInfo,
+      items: cart.map(item => ({
+        menu_item_id: item.id,
+        quantity: item.quantity,
+        special_instructions: item.specialInstructions
+      })),
+      special_instructions: specialInstructions,
+      order_type: 'dine-in'
+    };
+
+    let response;
+    if (activeOrder.latestOrderId) {
+      // Adding to existing order
+      response = await restaurantOrderApi.addItemsToOrder(activeOrder.latestOrderId, {
+        items: orderData.items,
+        special_instructions: specialInstructions
+      });
+    } else {
+      // Creating new order
+      response = await restaurantOrderApi.createOrder(orderData);
+    }
+
+    // Update active order with new round
+    const newRound = {
+      id: activeOrder.rounds.length + 1,
+      items: cart,
+      timestamp: new Date(),
+      status: 'submitted',
+      orderId: response.order?.id || activeOrder.latestOrderId,
+      orderNumber: response.order?.order_number
+    };
+
+    setActiveOrder({
+      ...activeOrder,
+      rounds: [...activeOrder.rounds, newRound],
+      latestOrderId: response.order?.id || activeOrder.latestOrderId
+    });
+
+    setCart([]);
+    setSpecialInstructions('');
+    
+    // Refresh orders
+    await loadOrders();
+    
+    console.log('✅ Order round submitted successfully');
+  } catch (err) {
+    setError(err.message || 'Failed to submit order');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const finishOrderSession = () => {
     setActiveOrder(null);
@@ -1232,120 +1120,6 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
   );
 };
 
-// Bill Modal Component
-const BillModal = ({ order, onClose }) => {
-  const handlePrint = () => {
-    window.print();
-  };
-  return (
- <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-  <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-    
-    {/* Header */}
-    <div className="flex items-center justify-between mb-6">
-      <h3 className="text-xl font-semibold text-gray-900">
-        Bill - Order #{order.order_number}
-      </h3>
-      <button
-        onClick={onClose}
-        className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-      >
-        ✕
-      </button>
-    </div>
 
-    <div className="space-y-6  bg-light-orange p-4 rounded-md">
-      
-      {/* Hotel Info */}
-      <div className="text-center border-b pb-4">
-        <h2 className="text-hightower font-bold">Mayfair Hotel</h2>
-        <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
-      </div>
-
-      {/* Order Details */}
-      <div className="grid grid-cols-2 gap-4 text-sm ">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Order Number:</span>
-          <span className="font-medium">{order.order_number}</span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Table:</span>
-          <span className="font-medium">{order.table_number || "N/A"}</span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Customer:</span>
-          <span className="font-medium">
-            {order.first_name} {order.last_name}
-          </span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Date:</span>
-          <span className="font-medium">
-            {new Date(order.placed_at).toLocaleString()}
-          </span>
-        </div>
-      </div>
-
-      {/* Items */}
-      <div className="border-t pt-4">
-        <h4 className="font-medium mb-3 text-lg">Items</h4>
-        <div className="divide-y text-sm">
-          {order.items?.map((item) => (
-            <div key={item.id} className="flex justify-between py-1">
-              <span>{item.quantity}× {item.item_name}</span>
-              <span>₹{parseFloat(item.total_price).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Totals */}
-      <div className="border-t pt-4 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Subtotal:</span>
-          <span>₹{parseFloat(order.total_amount).toFixed(2)}</span>
-        </div>
-        
-        <div className="flex justify-between">
-          <span className="text-gray-600">Tax:</span>
-          <span>₹{parseFloat(order.tax_amount || 0).toFixed(2)}</span>
-        </div>
-        
-        <div className="flex justify-between font-bold text-xl border-t pt-3">
-          <span>Total:</span>
-          <span>   ₹{(
-        (parseFloat(order.total_amount) || 0) +
-        (parseFloat(order.tax_amount) || 0)
-      ).toFixed(2)}</span>
-        </div>
-      </div>
-      
-    </div>
-
-    {/* Footer Buttons */}
-    <div className="mt-8 flex space-x-4">
-      <button
-        onClick={onClose}
-        className="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-100"
-      >
-        Close
-      </button>
-      
-      <button
-        onClick={handlePrint}
-        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700"
-      >
-        Print Bill
-      </button>
-    </div>
-    
-  </div>
-</div>
-    
-  );
-};
 
 export default WaiterOrderInterface;
