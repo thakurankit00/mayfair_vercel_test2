@@ -144,9 +144,11 @@ const getTables = async (req, res) => {
           CONCAT('Table ', restaurant_tables.table_number) as table_name
         `)
       )
-      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+      .leftJoin('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
       .where('restaurant_tables.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('restaurant_tables.restaurant_id');
+      })
       .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
 
     if (restaurantId && restaurantId !== 'all') {
@@ -470,9 +472,11 @@ const getMenuCategories = async (req, res) => {
     
     let query = db('menu_categories')
       .select('menu_categories.*', 'restaurants.name as restaurant_name')
-      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .leftJoin('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
       .where('menu_categories.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('menu_categories.restaurant_id');
+      })
       .orderBy('menu_categories.display_order', 'asc');
     
     if (restaurantId && restaurantId !== 'all') {
@@ -585,9 +589,11 @@ const getMenu = async (req, res) => {
     
     let categoryQuery = db('menu_categories')
       .select('menu_categories.*', 'restaurants.name as restaurant_name')
-      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .leftJoin('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
       .where('menu_categories.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('menu_categories.restaurant_id');
+      })
       .orderBy('menu_categories.display_order', 'asc');
     
     if (restaurantId && restaurantId !== 'all') {
