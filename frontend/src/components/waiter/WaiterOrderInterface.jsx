@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
-import { 
-  restaurantApi, 
-  restaurantTableApi, 
-  restaurantMenuApi, 
+import {
+  restaurantApi,
+  restaurantTableApi,
+  restaurantMenuApi,
   restaurantOrderApi
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
+import BillModal from '../payment/BillModal';
+import PaymentModal from '../payment/PaymentModal';
 const WaiterOrderInterface = () => {
   const { user } = useAuth();
   const { notifications, markNotificationAsRead, emitEvent } = useSocket();
@@ -36,7 +38,9 @@ const WaiterOrderInterface = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('new-order'); // new-order, active-orders, history
   const [showBillModal, setShowBillModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
 
   // Load initial data
   useEffect(() => {
@@ -357,8 +361,35 @@ const WaiterOrderInterface = () => {
       const billData = await restaurantOrderApi.generateBill(order.id);
       setSelectedOrderForBill({ ...order, bill: billData.bill });
       setShowBillModal(true);
+      // Refresh orders to show updated status
+      await loadOrders();
     } catch (err) {
       setError(err.message || 'Failed to generate bill');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestPayment = (order) => {
+    setSelectedOrderForPayment(order);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentInitiated = async () => {
+    // Refresh orders to show updated status
+    await loadOrders();
+    setShowPaymentModal(false);
+    setSelectedOrderForPayment(null);
+  };
+
+  const handleCompleteOrder = async (order) => {
+    try {
+      setLoading(true);
+      await restaurantOrderApi.completeOrder(order.id);
+      await loadOrders();
+      console.log('✅ Order completed successfully');
+    } catch (err) {
+      setError(err.message || 'Failed to complete order');
     } finally {
       setLoading(false);
     }
@@ -557,9 +588,11 @@ const WaiterOrderInterface = () => {
 
       {activeTab === 'active-orders' && (
         <ActiveOrdersTab
-          orders={currentOrders.filter(o => ['pending', 'preparing'].includes(o.status))}
+          orders={currentOrders.filter(o => ['pending', 'preparing', 'ready', 'billed', 'payment_pending', 'paid'].includes(o.status))}
           onGenerateBill={generateBill}
-           onAddOrderToExisting={handleAddOrderToExisting}
+          onRequestPayment={handleRequestPayment}
+          onCompleteOrder={handleCompleteOrder}
+          onAddOrderToExisting={handleAddOrderToExisting}
           loading={loading}
         />
       )}
@@ -576,11 +609,28 @@ const WaiterOrderInterface = () => {
       {/* Bill Generation Modal */}
       {showBillModal && selectedOrderForBill && (
         <BillModal
+          isOpen={showBillModal}
           order={selectedOrderForBill}
           onClose={() => {
             setShowBillModal(false);
             setSelectedOrderForBill(null);
           }}
+          onBillGenerated={(bill) => {
+            console.log('📄 Bill generated:', bill);
+          }}
+        />
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedOrderForPayment && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          order={selectedOrderForPayment}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setSelectedOrderForPayment(null);
+          }}
+          onPaymentInitiated={handlePaymentInitiated}
         />
       )}
     </div>
@@ -905,7 +955,14 @@ const NewOrderTab = ({
 };
 
 // Active Orders Tab Component
-const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting }) => {
+const ActiveOrdersTab = ({
+  orders,
+  onGenerateBill,
+  onRequestPayment,
+  onCompleteOrder,
+  loading,
+  onAddOrderToExisting
+}) => {
   return (
     <div className="space-y-4">
       {orders.map(order => (
@@ -982,13 +1039,36 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
             </div>
 
             <div className="ml-4 space-y-2">
-              <button
-                onClick={() => onGenerateBill(order)}
-                disabled={loading}
-                className="bg-blue-600 text-white px-4 py-2 mr-2 rounded text-md font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                Generate Bill
-              </button>
+              {order.status === 'ready' && (
+                <button
+                  onClick={() => onGenerateBill(order)}
+                  disabled={loading}
+                  className="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  📄 Generate Bill
+                </button>
+              )}
+
+              {order.status === 'billed' && (
+                <button
+                  onClick={() => onRequestPayment(order)}
+                  disabled={loading}
+                  className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  💳 Request Payment
+                </button>
+              )}
+
+              {order.status === 'paid' && (
+                <button
+                  onClick={() => onCompleteOrder(order)}
+                  disabled={loading}
+                  className="bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
+                >
+                  ✅ Complete Order
+                </button>
+              )}
+
               {['pending', 'preparing'].includes(order.status) && (
                 <button
                   onClick={() => onAddOrderToExisting(order)}
@@ -998,8 +1078,6 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
                   + Add Order
                 </button>
               )}
-  
-
             </div>
           </div>
         </div>

@@ -123,6 +123,7 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/restaurant', restaurantRoutes);
+app.use('/api/v1/payments', require('./routes/payments'));
 app.use('/api/v1/upload',uploadRoutes);
 // 404 handler
 app.use(notFound);

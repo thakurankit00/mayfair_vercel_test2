@@ -1642,6 +1642,17 @@ const generateBill = async (req, res) => {
       }
     };
     
+    // Check if order is ready for billing
+    if (!['ready', 'served'].includes(orderDetails.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_READY_FOR_BILLING',
+          message: 'Order must be ready or served before generating bill'
+        }
+      });
+    }
+
     // Update order status to indicate bill generated
     await db('orders')
       .where('id', orderId)
@@ -1682,6 +1693,184 @@ const generateBill = async (req, res) => {
   }
 };
 
+/**
+ * Request payment for order (update status to payment_pending)
+ * POST /api/v1/restaurant/orders/:orderId/request-payment
+ */
+const requestPayment = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    console.log('💳 [ORDER] Requesting payment for order:', orderId);
+
+    // Get order details
+    const orderDetails = await getOrderDetails(orderId);
+
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    // Check permissions
+    if (userRole === 'customer' && orderDetails.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only request payment for your own orders'
+        }
+      });
+    }
+
+    // Check if order is billed
+    if (orderDetails.status !== 'billed') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_BILLED',
+          message: 'Order must be billed before requesting payment'
+        }
+      });
+    }
+
+    // Update order status to payment_pending
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        status: 'payment_pending',
+        payment_requested_at: new Date(),
+        updated_at: new Date()
+      });
+
+    // Emit Socket.io event for payment request
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderStatusUpdate({
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'payment_pending',
+        userId,
+        userRole,
+        waiterId: orderDetails.waiter_id
+      });
+    }
+
+    console.log('💳 [ORDER] Payment requested for order:', orderDetails.order_number);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'payment_pending',
+        totalAmount: orderDetails.total_amount,
+        taxAmount: orderDetails.tax_amount
+      },
+      message: 'Payment requested successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ [ORDER] Request payment error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to request payment'
+      }
+    });
+  }
+};
+
+/**
+ * Mark order as completed
+ * POST /api/v1/restaurant/orders/:orderId/complete
+ */
+const completeOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    console.log('✅ [ORDER] Completing order:', orderId);
+
+    // Get order details
+    const orderDetails = await getOrderDetails(orderId);
+
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    // Check if order is paid or can be completed without payment
+    if (!['paid', 'served'].includes(orderDetails.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_READY_FOR_COMPLETION',
+          message: 'Order must be paid or served before completion'
+        }
+      });
+    }
+
+    // Update order status to completed
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        status: 'completed',
+        completed_at: new Date(),
+        updated_at: new Date()
+      });
+
+    // Emit Socket.io event for order completion
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderStatusUpdate({
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'completed',
+        userId,
+        userRole,
+        waiterId: orderDetails.waiter_id
+      });
+    }
+
+    console.log('✅ [ORDER] Order completed:', orderDetails.order_number);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        orderId,
+        orderNumber: orderDetails.order_number,
+        status: 'completed',
+        completedAt: new Date()
+      },
+      message: 'Order completed successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ [ORDER] Complete order error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to complete order'
+      }
+    });
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
@@ -1690,6 +1879,8 @@ module.exports = {
   updateOrderItemStatus,
   addOrderItems,
   generateBill,
+  requestPayment,
+  completeOrder,
   // Kitchen management
   getKitchenDashboard,
   getKitchenOrders,

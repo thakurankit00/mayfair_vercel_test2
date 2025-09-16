@@ -682,6 +682,48 @@ class SocketHandler {
 
     executeWithRetry();
   }
+
+  /**
+   * Handle payment status updates
+   * @param {Object} paymentData - Payment status data
+   */
+  handlePaymentStatusUpdate(paymentData) {
+    const { orderId, orderNumber, paymentStatus, amount, transactionId } = paymentData;
+
+    console.log(`💳 [SOCKET] Handling payment status update:`, paymentData);
+
+    // Notify all waiters about payment status
+    console.log(`💳 [SOCKET] Emitting to waiters room`);
+    this.io.to('waiters').emit('payment-status-updated', {
+      orderId,
+      orderNumber,
+      paymentStatus,
+      amount,
+      transactionId,
+      timestamp: new Date()
+    });
+
+    // Notify managers and admins
+    console.log(`💳 [SOCKET] Emitting to managers room`);
+    this.io.to('managers').emit('payment-status-updated', {
+      orderId,
+      orderNumber,
+      paymentStatus,
+      amount,
+      transactionId,
+      timestamp: new Date()
+    });
+
+    console.log(`💳 [SOCKET] Payment status update completed`);
+  }
+
+  /**
+   * Emit payment status update
+   * @param {Object} paymentData - Payment status data
+   */
+  emitPaymentStatusUpdate(paymentData) {
+    this.handlePaymentStatusUpdate(paymentData);
+  }
 }
 
 module.exports = SocketHandler;
