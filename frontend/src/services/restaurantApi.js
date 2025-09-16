@@ -405,6 +405,18 @@ export const restaurantOrderApi = {
   generateBill: async (orderId) => {
     const response = await api.post(`/restaurant/orders/${orderId}/bill`);
     return response.data.data;
+  },
+
+  // Request payment for order
+  requestPayment: async (orderId) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/request-payment`);
+    return response.data.data;
+  },
+
+  // Complete order
+  completeOrder: async (orderId) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/complete`);
+    return response.data.data;
   }
 };
 

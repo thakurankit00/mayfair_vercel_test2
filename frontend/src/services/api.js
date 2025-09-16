@@ -261,6 +261,63 @@ export const roomApi = {
   }
 };
 
+// Payment API
+export const paymentApi = {
+  // Create payment intent
+  createPaymentIntent: async (paymentData) => {
+    try {
+      const response = await apiClient.post('/payments/create-intent', paymentData);
+      return response.data;
+    } catch (error) {
+      console.error('Create payment intent error:', error);
+      throw error;
+    }
+  },
+
+  // Get payment status
+  getPaymentStatus: async (paymentId) => {
+    try {
+      const response = await apiClient.get(`/payments/${paymentId}/status`);
+      return response.data;
+    } catch (error) {
+      console.error('Get payment status error:', error);
+      throw error;
+    }
+  },
+
+  // Get payment history
+  getPaymentHistory: async (params = {}) => {
+    try {
+      const response = await apiClient.get('/payments/history', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Get payment history error:', error);
+      throw error;
+    }
+  },
+
+  // Verify payment
+  verifyPayment: async (paymentId) => {
+    try {
+      const response = await apiClient.post(`/payments/${paymentId}/verify`);
+      return response.data;
+    } catch (error) {
+      console.error('Verify payment error:', error);
+      throw error;
+    }
+  },
+
+  // Get payment form URL
+  getPaymentForm: async (paymentId) => {
+    try {
+      const response = await apiClient.get(`/payments/${paymentId}/form`);
+      return response.data;
+    } catch (error) {
+      console.error('Get payment form error:', error);
+      throw error;
+    }
+  }
+};
 
 // Restaurant API - now properly implemented
 export const restaurantApiService = {
@@ -301,6 +358,7 @@ const apiServices = {
   users: userApi,
   rooms: roomApi,
   restaurant: restaurantApiService,
+  payments: paymentApi,
   offers: offersApi
 };
 

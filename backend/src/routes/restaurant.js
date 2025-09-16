@@ -32,6 +32,8 @@ const {
   updateOrderItemStatus,
   addOrderItems,
   generateBill,
+  requestPayment,
+  completeOrder,
   // Kitchen management
   getKitchenOrders,
   acceptKitchenOrder,
@@ -215,6 +217,12 @@ router.post('/orders/:id/items', authenticateToken, addOrderItems);
 
 // Generate bill for order (Waiter+)
 router.post('/orders/:orderId/bill', authenticateToken, requireRole(['waiter', 'manager', 'admin']), generateBill);
+
+// Request payment for order (Waiter+)
+router.post('/orders/:orderId/request-payment', authenticateToken, requireRole(['waiter', 'manager', 'admin']), requestPayment);
+
+// Complete order (Waiter+)
+router.post('/orders/:orderId/complete', authenticateToken, requireRole(['waiter', 'manager', 'admin']), completeOrder);
 
 // ============================================================================
 // KITCHEN MANAGEMENT ROUTES

@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
-import { 
-  restaurantApi, 
-  restaurantTableApi, 
-  restaurantMenuApi, 
+import {
+  restaurantApi,
+  restaurantTableApi,
+  restaurantMenuApi,
   restaurantOrderApi
 } from '../../services/restaurantApi';
 import LoadingSpinner from '../common/LoadingSpinner';
+import BillModal from '../payment/BillModal';
+import PaymentModal from '../payment/PaymentModal';
 const WaiterOrderInterface = () => {
   const { user } = useAuth();
   const { notifications, markNotificationAsRead, emitEvent } = useSocket();
@@ -36,7 +38,9 @@ const WaiterOrderInterface = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('new-order'); // new-order, active-orders, history
   const [showBillModal, setShowBillModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
 
   // Load initial data
   useEffect(() => {
@@ -357,8 +361,35 @@ const WaiterOrderInterface = () => {
       const billData = await restaurantOrderApi.generateBill(order.id);
       setSelectedOrderForBill({ ...order, bill: billData.bill });
       setShowBillModal(true);
+      // Refresh orders to show updated status
+      await loadOrders();
     } catch (err) {
       setError(err.message || 'Failed to generate bill');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestPayment = (order) => {
+    setSelectedOrderForPayment(order);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentInitiated = async () => {
+    // Refresh orders to show updated status
+    await loadOrders();
+    setShowPaymentModal(false);
+    setSelectedOrderForPayment(null);
+  };
+
+  const handleCompleteOrder = async (order) => {
+    try {
+      setLoading(true);
+      await restaurantOrderApi.completeOrder(order.id);
+      await loadOrders();
+      console.log('✅ Order completed successfully');
+    } catch (err) {
+      setError(err.message || 'Failed to complete order');
     } finally {
       setLoading(false);
     }
@@ -557,9 +588,11 @@ const WaiterOrderInterface = () => {
 
       {activeTab === 'active-orders' && (
         <ActiveOrdersTab
-          orders={currentOrders.filter(o => ['pending', 'preparing'].includes(o.status))}
+          orders={currentOrders.filter(o => ['pending', 'preparing', 'ready', 'billed', 'payment_pending', 'paid'].includes(o.status))}
           onGenerateBill={generateBill}
-           onAddOrderToExisting={handleAddOrderToExisting}
+          onRequestPayment={handleRequestPayment}
+          onCompleteOrder={handleCompleteOrder}
+          onAddOrderToExisting={handleAddOrderToExisting}
           loading={loading}
         />
       )}
@@ -576,11 +609,28 @@ const WaiterOrderInterface = () => {
       {/* Bill Generation Modal */}
       {showBillModal && selectedOrderForBill && (
         <BillModal
+          isOpen={showBillModal}
           order={selectedOrderForBill}
           onClose={() => {
             setShowBillModal(false);
             setSelectedOrderForBill(null);
           }}
+          onBillGenerated={(bill) => {
+            console.log('📄 Bill generated:', bill);
+          }}
+        />
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedOrderForPayment && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          order={selectedOrderForPayment}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setSelectedOrderForPayment(null);
+          }}
+          onPaymentInitiated={handlePaymentInitiated}
         />
       )}
     </div>
@@ -905,7 +955,14 @@ const NewOrderTab = ({
 };
 
 // Active Orders Tab Component
-const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting }) => {
+const ActiveOrdersTab = ({
+  orders,
+  onGenerateBill,
+  onRequestPayment,
+  onCompleteOrder,
+  loading,
+  onAddOrderToExisting
+}) => {
   return (
     <div className="space-y-4">
       {orders.map(order => (
@@ -987,20 +1044,39 @@ const ActiveOrdersTab = ({ orders, onGenerateBill, loading,onAddOrderToExisting 
                   disabled={loading}
                   className="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50"
                 >
-                  Generate Bill
+                  📄 Generate Bill
                 </button>
               )}
-              {['pending', 'preparing'].includes(order.status) && (
-    <button
-      onClick={() => onAddOrderToExisting(order)}
-      disabled={loading}
-      className="bg-green-600 text-white px-4 py-2 rounded  font-medium hover:bg-green-700 disabled:opacity-50"
-    >
-      + Add Order
-    </button>
-  )}
-  
 
+              {order.status === 'billed' && (
+                <button
+                  onClick={() => onRequestPayment(order)}
+                  disabled={loading}
+                  className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  💳 Request Payment
+                </button>
+              )}
+
+              {order.status === 'paid' && (
+                <button
+                  onClick={() => onCompleteOrder(order)}
+                  disabled={loading}
+                  className="bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
+                >
+                  ✅ Complete Order
+                </button>
+              )}
+
+              {['pending', 'preparing'].includes(order.status) && (
+                <button
+                  onClick={() => onAddOrderToExisting(order)}
+                  disabled={loading}
+                  className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  + Add Order
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1122,98 +1198,6 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
   );
 };
 
-// Bill Modal Component
-const BillModal = ({ order, onClose }) => {
-  const handlePrint = () => {
-    window.print();
-  };
-    
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-96 overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Bill - Order #{order.order_number}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ✕
-          </button>
-        </div>
-        
-        <div className="space-y-4">
-          <div className="text-center border-b pb-4">
-            <h2 className="text-xl font-bold">Mayfair Hotel</h2>
-            <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
-          </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span>Order Number:</span>
-              <span className="font-medium">{order.order_number}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Table:</span>
-              <span className="font-medium">{order.table_number}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Customer:</span>
-              <span className="font-medium">{order.first_name} {order.last_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Date:</span>
-              <span className="font-medium">{new Date(order.placed_at).toLocaleString()}</span>
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <h4 className="font-medium mb-2">Items:</h4>
-            <div className="space-y-1 text-sm">
-              {order.items?.map(item => (
-                <div key={item.id} className="flex justify-between">
-                  <span>{item.quantity}x {item.item_name}</span>
-                  <span>₹{parseFloat(item.total_price).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t pt-4 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span>Subtotal:</span>
-              <span>₹{parseFloat(order.total_amount).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tax:</span>
-              <span>₹{parseFloat(order.tax_amount || 0).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Total:</span>
-              <span>₹{parseFloat(order.total_amount + (order.tax_amount || 0)).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 flex space-x-3">
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
-          >
-            Close
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
-          >
-            Print Bill
-          </button>
-        </div>
-      </div>
-    </div>
-    
-  );
-};
 
 export default WaiterOrderInterface;
