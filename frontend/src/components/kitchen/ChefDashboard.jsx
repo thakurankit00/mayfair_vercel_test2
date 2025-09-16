@@ -17,6 +17,12 @@ const ChefDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       const data = await orderApi.getKitchenDashboard();
+      // Debug log: inspect orders received from API
+      if (data && data.orders) {
+        console.log('ChefDashboard API orders:', data.orders.map(o => ({ id: o.id, status: o.status })));
+      } else {
+        console.log('ChefDashboard API response:', data);
+      }
       setDashboardData(data);
       setError('');
     } catch (err) {

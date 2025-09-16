@@ -1176,16 +1176,16 @@ const BillModal = ({ order, onClose }) => {
       </button>
     </div>
 
-    <div className="space-y-6">
+    <div className="space-y-6  bg-light-orange p-4 rounded-md">
       
       {/* Hotel Info */}
       <div className="text-center border-b pb-4">
-        <h2 className="text-2xl font-bold">Mayfair Hotel</h2>
+        <h2 className="text-hightower font-bold">Mayfair Hotel</h2>
         <p className="text-sm text-gray-600">BSNL Exchange, Mandi, HP</p>
       </div>
 
       {/* Order Details */}
-      <div className="grid grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-2 gap-4 text-sm ">
         <div className="flex justify-between">
           <span className="text-gray-600">Order Number:</span>
           <span className="font-medium">{order.order_number}</span>
