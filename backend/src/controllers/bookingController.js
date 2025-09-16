@@ -402,11 +402,135 @@ const cancelBooking = async (req, res, next) => {
   }
 };
 
+// Get bookings for calendar view
+const getBookingCalendar = async (req, res, next) => {
+  try {
+    const { start_date, end_date, room_type_id } = req.query;
+    
+    // Default to current month if no dates provided
+    const startDate = start_date ? new Date(start_date) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const endDate = end_date ? new Date(end_date) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+    
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Invalid date format' }
+      });
+    }
+    
+    if (endDate <= startDate) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'End date must be after start date' }
+      });
+    }
+
+    // Build query for bookings in date range
+    let bookingsQuery = RoomBooking.query()
+      .withGraphFetched('[room.[roomType], customer]')
+      .leftJoin('rooms', 'room_bookings.room_id', 'rooms.id')
+      .where(builder => {
+        builder
+          .where('room_bookings.check_in_date', '<=', endDate.toISOString().split('T')[0])
+          .where('room_bookings.check_out_date', '>', startDate.toISOString().split('T')[0]);
+      })
+      .whereNot('room_bookings.status', 'cancelled')
+      .orderBy(['rooms.room_number', 'room_bookings.check_in_date'])
+      .select('room_bookings.*');
+
+    // Filter by room type if specified
+    if (room_type_id) {
+      bookingsQuery = bookingsQuery.where('rooms.room_type_id', room_type_id);
+    }
+
+    const bookings = await bookingsQuery;
+
+    // Get all rooms for the calendar grid
+    let roomsQuery = Room.query()
+      .withGraphFetched('roomType')
+      .where('status', '!=', 'maintenance')
+      .orderBy(['room_number']);
+
+    if (room_type_id) {
+      roomsQuery = roomsQuery.where('room_type_id', room_type_id);
+    }
+
+    const rooms = await roomsQuery;
+
+    // Get room types for filtering
+    const roomTypes = await RoomType.query()
+      .where('is_active', true)
+      .orderBy('name');
+
+    // Transform bookings for calendar display
+    const calendarBookings = bookings.map(booking => {
+      const checkIn = new Date(booking.check_in_date);
+      const checkOut = new Date(booking.check_out_date);
+      
+      return {
+        id: booking.id,
+        room_id: booking.room_id,
+        room_number: booking.room.room_number,
+        room_type: booking.room.roomType.name,
+        customer_name: `${booking.customer.first_name} ${booking.customer.last_name}`,
+        customer_phone: booking.customer.phone,
+        total_guests: booking.adults + booking.children,
+        adults: booking.adults,
+        children: booking.children,
+        check_in_date: booking.check_in_date,
+        check_out_date: booking.check_out_date,
+        nights: Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24)),
+        status: booking.status,
+        total_amount: booking.total_amount,
+        platform: booking.platform,
+        special_requests: booking.special_requests,
+        created_at: booking.created_at
+      };
+    });
+
+    // Transform rooms for calendar grid
+    const calendarRooms = rooms.map(room => ({
+      id: room.id,
+      room_number: room.room_number,
+      room_type: room.roomType.name,
+      room_type_id: room.room_type_id,
+      floor: room.floor,
+      status: room.status,
+      max_occupancy: room.roomType.max_occupancy,
+      base_price: room.roomType.base_price
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        bookings: calendarBookings,
+        rooms: calendarRooms,
+        room_types: roomTypes,
+        date_range: {
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0]
+        },
+        summary: {
+          total_bookings: calendarBookings.length,
+          total_rooms: calendarRooms.length,
+          occupancy_rate: Math.round((calendarBookings.length / (calendarRooms.length * Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)))) * 100) || 0
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Calendar booking fetch error:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   createBooking,
   getUserBookings,
   getAllBookings,
   getBookingById,
   updateBookingStatus,
-  cancelBooking
+  cancelBooking,
+  getBookingCalendar
 };

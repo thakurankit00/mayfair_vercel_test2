@@ -13,6 +13,7 @@ import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
 import ChefDashboard from './components/kitchen/ChefDashboard';
 import UserManagement from './components/admin/UserManagement';
 import OrdersPage from './components/orders/OrdersPage';
+import BookingCalendar from './components/hotel/BookingCalendar';
 import NotificationContainer from './components/common/NotificationToast';
 import PopupNotification from './components/common/PopupNotification';
 import { useSocket } from './contexts/SocketContext';
@@ -152,9 +153,9 @@ const App = () => {
               <Route 
                 path="/bookings" 
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute roles={['receptionist', 'manager', 'admin']}>
                     <Layout>
-                      <PlaceholderPage title="Bookings" />
+                      <BookingCalendar />
                     </Layout>
                   </ProtectedRoute>
                 } 

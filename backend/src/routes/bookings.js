@@ -53,6 +53,9 @@ router.get('/my-bookings', bookingController.getUserBookings);
 // Get all bookings (staff only)
 router.get('/', requireRole(['manager', 'admin', 'receptionist']), bookingController.getAllBookings);
 
+// Get bookings for calendar view (staff only)
+router.get('/calendar', requireRole(['manager', 'admin', 'receptionist']), bookingController.getBookingCalendar);
+
 // Get booking by ID
 router.get('/:id', bookingController.getBookingById);
 

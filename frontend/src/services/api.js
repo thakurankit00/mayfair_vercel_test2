@@ -294,6 +294,9 @@ export const offersApi = {
   }
 };
 
+// Export the api instance for other services to use
+export { api };
+
 // Export all APIs
 const apiServices = {
   auth: authApi,
