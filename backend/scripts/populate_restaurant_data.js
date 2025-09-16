@@ -14,6 +14,10 @@ async function populateRestaurantData() {
     await db('menu_categories').del();
     await db('restaurant_tables').del();
 
+    // Get restaurant IDs
+    const restaurants = await db('restaurants').select('id', 'name');
+    const restaurantId = restaurants.find(r => r.name === 'Mayfair Restaurant')?.id || restaurants[0]?.id;
+
     // Create restaurant tables
     console.log('Creating restaurant tables...');
     const tables = [
@@ -39,6 +43,7 @@ async function populateRestaurantData() {
       table_number: table.table_number,
       capacity: table.capacity,
       location: table.location,
+      restaurant_id: restaurantId,
       is_active: true,
       created_at: new Date(),
       updated_at: new Date()
@@ -68,6 +73,7 @@ async function populateRestaurantData() {
       name: category.name,
       description: category.description,
       type: category.type,
+      restaurant_id: restaurantId,
       display_order: category.display_order,
       is_active: true,
       created_at: new Date(),

@@ -12,7 +12,11 @@ const PaymentModal = ({ isOpen, onClose, order, onPaymentInitiated }) => {
   });
 
   useEffect(() => {
+<<<<<<< HEAD
     if (isOpen && order) {
+=======
+    if (isOpen && order) {s
+>>>>>>> origin/feature/booking-chart
       // Pre-fill customer info if available
       setCustomerInfo({
         name: order.customerName || '',

@@ -145,6 +145,19 @@ export const bookingApi = {
   checkOut: async (bookingId, checkOutData = {}) => {
     const response = await api.patch(`/api/v1/hotel/bookings/${bookingId}/check-out`, checkOutData);
     return response.data;
+  },
+
+  // Get calendar data
+  getCalendarData: async (startDate, endDate, roomTypeId = null) => {
+    const queryParams = new URLSearchParams();
+    
+    if (startDate) queryParams.append('start_date', startDate);
+    if (endDate) queryParams.append('end_date', endDate);
+    if (roomTypeId) queryParams.append('room_type_id', roomTypeId);
+    
+    const url = `/bookings/calendar${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await api.get(url);
+    return response.data;
   }
 };
 
@@ -192,9 +205,11 @@ export const hotelApi = {
 };
 
 // Export everything
-export default {
+const hotelApiServices = {
   roomApi,
   roomTypeApi,
   bookingApi,
   hotelApi
 };
+
+export default hotelApiServices;
