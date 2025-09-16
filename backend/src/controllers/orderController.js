@@ -321,10 +321,36 @@ const getOrders = async (req, res) => {
         query = query.where('o.waiter_id', userId);
         break;
       case 'chef':
-        query = query.where('o.order_type', 'restaurant');
+        // Chefs can only see orders assigned to kitchens they are assigned to
+        const chefKitchens = await db('restaurant_staff')
+          .select('restaurant_id')
+          .where('user_id', userId)
+          .where('role', 'chef')
+          .where('is_active', true);
+
+        if (chefKitchens.length > 0) {
+          const kitchenIds = chefKitchens.map(k => k.restaurant_id);
+          query = query.whereIn('o.target_kitchen_id', kitchenIds);
+        } else {
+          // If chef is not assigned to any kitchen, return no orders
+          query = query.where('o.id', null);
+        }
         break;
       case 'bartender':
-        query = query.where('o.order_type', 'bar');
+        // Bartenders can only see orders assigned to kitchens they are assigned to
+        const bartenderKitchens = await db('restaurant_staff')
+          .select('restaurant_id')
+          .where('user_id', userId)
+          .where('role', 'bartender')
+          .where('is_active', true);
+
+        if (bartenderKitchens.length > 0) {
+          const kitchenIds = bartenderKitchens.map(k => k.restaurant_id);
+          query = query.whereIn('o.target_kitchen_id', kitchenIds);
+        } else {
+          // If bartender is not assigned to any kitchen, return no orders
+          query = query.where('o.id', null);
+        }
         break;
       case 'admin':
       case 'manager':
