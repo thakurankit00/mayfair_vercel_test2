@@ -105,9 +105,20 @@ const BillModal = ({ isOpen, onClose, order, onBillGenerated }) => {
                     <span>{bill.orderNumber}</span>
                   </div>
                   <div className="bill-info-row">
-                    <span>Table:</span>
-                    <span>{bill.tableNumber}</span>
+                    <span>{bill.orderType === 'room-service' ? 'Room:' : 'Table:'}</span>
+                    <span>
+                      {bill.orderType === 'room-service' 
+                        ? `${bill.roomNumber} (${bill.guestName})`
+                        : bill.tableNumber
+                      }
+                    </span>
                   </div>
+                  {bill.orderType && (
+                    <div className="bill-info-row">
+                      <span>Type:</span>
+                      <span>{bill.orderType === 'room-service' ? 'Room Service' : 'Dine-In'}</span>
+                    </div>
+                  )}
                   <div className="bill-info-row">
                     <span>Date:</span>
                     <span>{formatDate(bill.generatedAt)}</span>

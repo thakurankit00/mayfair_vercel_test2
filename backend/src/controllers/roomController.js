@@ -1,380 +1,347 @@
-const RoomTypeDAO = require('../dao/RoomTypeDAO');
+const db = require('../config/database');
 
-/**
- * Check room availability based on date range and guest requirements
- * GET /api/v1/rooms/availability
- */
-const checkAvailability = async (req, res) => {
-  try {
-    const { checkInDate, checkOutDate, adults = 1, children = 0 } = req.query;
+const roomController = {
+  // Get occupied rooms for room service
+  getOccupiedRooms: async (req, res) => {
+    try {
+      const query = `
+        SELECT 
+          r.id,
+          r.room_number,
+          b.guest_first_name,
+          b.guest_last_name,
+          b.guest_phone,
+          b.guest_email,
+          b.check_in_date,
+          b.check_out_date,
+          b.status as booking_status
+        FROM rooms r
+        INNER JOIN bookings b ON r.id = b.room_id
+        WHERE b.status = 'checked_in'
+          AND b.check_in_date <= CURRENT_DATE
+          AND b.check_out_date > CURRENT_DATE
+        ORDER BY r.room_number ASC
+      `;
 
-    // Validate required parameters
-    if (!checkInDate || !checkOutDate) {
-      return res.status(400).json({
+      const result = await db.query(query);
+      
+      res.json({
+        success: true,
+        rooms: result.rows || []
+      });
+    } catch (error) {
+      console.error('Error fetching occupied rooms: - roomController.js:33', error);
+      res.status(500).json({
         success: false,
-        error: {
-          code: 'MISSING_PARAMETERS',
+        message: 'Failed to fetch occupied rooms'
+      });
+    }
+  },
+
+  // Get room by ID
+  getRoomById: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const query = `
+        SELECT 
+          r.*,
+          b.guest_first_name,
+          b.guest_last_name,
+          b.guest_phone,
+          b.guest_email,
+          b.check_in_date,
+          b.check_out_date,
+          b.status as booking_status
+        FROM rooms r
+        LEFT JOIN bookings b ON r.id = b.room_id 
+          AND b.status = 'checked_in'
+          AND b.check_in_date <= CURRENT_DATE
+          AND b.check_out_date > CURRENT_DATE
+        WHERE r.id = $1
+      `;
+
+      const result = await db.query(query, [id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Room not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        room: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Error fetching room: - roomController.js:78', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch room details'
+      });
+    }
+  },
+
+  // Check room availability
+  checkAvailability: async (req, res) => {
+    try {
+      const { checkIn, checkOut, roomType } = req.query;
+      
+      if (!checkIn || !checkOut) {
+        return res.status(400).json({
+          success: false,
           message: 'Check-in and check-out dates are required'
-        }
-      });
-    }
-
-    // Validate date format and logic
-    const checkIn = new Date(checkInDate);
-    const checkOut = new Date(checkOutDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_DATE',
-          message: 'Invalid date format. Use YYYY-MM-DD format'
-        }
-      });
-    }
-
-    if (checkIn < today) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'PAST_DATE',
-          message: 'Check-in date cannot be in the past'
-        }
-      });
-    }
-
-    if (checkOut <= checkIn) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_DATE_RANGE',
-          message: 'Check-out date must be after check-in date'
-        }
-      });
-    }
-
-    // Validate guest counts
-    const adultCount = parseInt(adults);
-    const childCount = parseInt(children);
-
-    if (adultCount < 1 || adultCount > 10) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_GUEST_COUNT',
-          message: 'Adults must be between 1 and 10'
-        }
-      });
-    }
-
-    if (childCount < 0 || childCount > 8) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_GUEST_COUNT',
-          message: 'Children must be between 0 and 8'
-        }
-      });
-    }
-
-    const totalGuests = adultCount + childCount;
-
-    // Use DAO to check availability
-    const availableRooms = await RoomTypeDAO.checkAvailability(
-      checkInDate,
-      checkOutDate,
-      totalGuests
-    );
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        availableRooms: availableRooms,
-        searchCriteria: {
-          checkInDate,
-          checkOutDate,
-          adults: adultCount,
-          children: childCount,
-          totalGuests,
-          nights: Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24))
-        },
-        totalResults: availableRooms.length
+        });
       }
-    });
-
-  } catch (error) {
-    console.error('Room availability check error:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to check room availability'
+      
+      let query = `
+        SELECT 
+          r.id,
+          r.room_number,
+          r.floor,
+          r.status,
+          r.max_occupancy,
+          r.base_price,
+          rt.id as room_type_id,
+          rt.name as room_type_name,
+          rt.base_price as type_base_price,
+          rt.max_occupancy as type_max_occupancy
+        FROM rooms r
+        LEFT JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE r.status = 'available'
+          AND rt.id IS NOT NULL
+          AND r.id NOT IN (
+            SELECT DISTINCT rb.room_id 
+            FROM room_bookings rb
+            WHERE rb.status IN ('confirmed', 'checked_in', 'pending')
+              AND ((rb.check_in_date <= $1 AND rb.check_out_date > $1)
+                   OR (rb.check_in_date < $2 AND rb.check_out_date >= $2)
+                   OR (rb.check_in_date >= $1 AND rb.check_out_date <= $2))
+          )
+      `;
+      
+      const params = [checkIn, checkOut];
+      
+      if (roomType) {
+        query += ` AND rt.id = $3`;
+        params.push(roomType);
       }
-    });
+      
+      query += ` ORDER BY r.room_number`;
+      
+      const result = await db.query(query, params);
+      
+      res.json({
+        success: true,
+        availableRooms: result.rows || [],
+        totalRooms: result.rows?.length || 0
+      });
+    } catch (error) {
+      console.error('Error checking availability: - roomController.js:121', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to check room availability',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  },
+
+  // Search rooms (alias for checkAvailability)
+  searchRooms: async (req, res) => {
+    return roomController.checkAvailability(req, res);
+  },
+
+  // Get room types
+  getRoomTypes: async (req, res) => {
+    try {
+      const query = `
+        SELECT rt.*, 
+               COUNT(r.id) as total_rooms,
+               COUNT(CASE WHEN r.status = 'available' THEN 1 END) as available_rooms
+        FROM room_types rt
+        LEFT JOIN rooms r ON rt.id = r.room_type_id
+        GROUP BY rt.id, rt.name, rt.description, rt.base_price, rt.max_occupancy, rt.amenities
+        ORDER BY rt.name
+      `;
+      
+      const result = await db.query(query);
+      
+      res.json({
+        success: true,
+        roomTypes: result.rows
+      });
+    } catch (error) {
+      console.error('Error fetching room types: - roomController.js:149', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch room types'
+      });
+    }
+  },
+
+  // Get room type by ID
+  getRoomTypeById: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const query = `
+        SELECT rt.*, 
+               COUNT(r.id) as total_rooms,
+               COUNT(CASE WHEN r.status = 'available' THEN 1 END) as available_rooms
+        FROM room_types rt
+        LEFT JOIN rooms r ON rt.id = r.room_type_id
+        WHERE rt.id = $1
+        GROUP BY rt.id, rt.name, rt.description, rt.base_price, rt.max_occupancy, rt.amenities
+      `;
+      
+      const result = await db.query(query, [id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Room type not found'
+        });
+      }
+      
+      res.json({
+        success: true,
+        roomType: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Error fetching room type: - roomController.js:186', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch room type'
+      });
+    }
+  },
+
+  // Create room type
+  createRoomType: async (req, res) => {
+    try {
+      const { name, description, base_price, max_occupancy, amenities } = req.body;
+      
+      const query = `
+        INSERT INTO room_types (name, description, base_price, max_occupancy, amenities)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+      
+      const result = await db.query(query, [name, description, base_price, max_occupancy, amenities]);
+      
+      res.status(201).json({
+        success: true,
+        roomType: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Error creating room type: - roomController.js:212', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create room type'
+      });
+    }
+  },
+
+  // Update room type
+  updateRoomType: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, base_price, max_occupancy, amenities } = req.body;
+      
+      const query = `
+        UPDATE room_types 
+        SET name = $1, description = $2, base_price = $3, max_occupancy = $4, amenities = $5, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $6
+        RETURNING *
+      `;
+      
+      const result = await db.query(query, [name, description, base_price, max_occupancy, amenities, id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Room type not found'
+        });
+      }
+      
+      res.json({
+        success: true,
+        roomType: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Error updating room type: - roomController.js:247', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update room type'
+      });
+    }
+  },
+
+  // Delete room type
+  deleteRoomType: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const query = `DELETE FROM room_types WHERE id = $1 RETURNING *`;
+      const result = await db.query(query, [id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Room type not found'
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: 'Room type deleted successfully'
+      });
+    } catch (error) {
+      console.error('Error deleting room type: - roomController.js:275', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete room type'
+      });
+    }
+  },
+
+  // Bulk update prices
+  bulkUpdatePrices: async (req, res) => {
+    try {
+      const { updates } = req.body; // Array of {id, base_price}
+      
+      const client = await db.getClient();
+      await client.query('BEGIN');
+      
+      try {
+        for (const update of updates) {
+          await client.query(
+            'UPDATE room_types SET base_price = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [update.base_price, update.id]
+          );
+        }
+        
+        await client.query('COMMIT');
+        
+        res.json({
+          success: true,
+          message: 'Prices updated successfully'
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Error bulk updating prices: - roomController.js:312', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update prices'
+      });
+    }
   }
 };
 
-/**
- * Get all room types with basic information
- * GET /api/v1/rooms/types
- */
-const getRoomTypes = async (req, res) => {
-  try {
-    const roomTypes = await RoomTypeDAO.getAllActive();
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        roomTypes: roomTypes
-      }
-    });
-
-  } catch (error) {
-    console.error('Get room types error:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to fetch room types'
-      }
-    });
-  }
-};
-
-/**
- * Get room details by ID
- * GET /api/v1/rooms/types/:id
- */
-const getRoomTypeById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const roomType = await RoomTypeDAO.getById(id);
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        roomType: roomType
-      }
-    });
-
-  } catch (error) {
-    console.error('Get room type by ID error:', error);
-    
-    if (error.message.includes('not found')) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'ROOM_TYPE_NOT_FOUND',
-          message: error.message
-        }
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to fetch room type details'
-      }
-    });
-  }
-};
-
-/**
- * Create new room type (Admin/Manager only)
- * POST /api/v1/rooms/types
- */
-const createRoomType = async (req, res) => {
-  try {
-    const roomTypeData = req.body;
-    const newRoomType = await RoomTypeDAO.create(roomTypeData);
-
-    return res.status(201).json({
-      success: true,
-      data: {
-        roomType: newRoomType
-      },
-      message: 'Room type created successfully'
-    });
-
-  } catch (error) {
-    console.error('Create room type error:', error);
-    
-    if (error.message.includes('already exists')) {
-      return res.status(409).json({
-        success: false,
-        error: {
-          code: 'DUPLICATE_ROOM_TYPE',
-          message: error.message
-        }
-      });
-    }
-
-    if (error.message.includes('required')) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: error.message
-        }
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to create room type'
-      }
-    });
-  }
-};
-
-/**
- * Update room type (Admin/Manager only)
- * PUT /api/v1/rooms/types/:id
- */
-const updateRoomType = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = req.body;
-    
-    const updatedRoomType = await RoomTypeDAO.update(id, updateData);
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        roomType: updatedRoomType
-      },
-      message: 'Room type updated successfully'
-    });
-
-  } catch (error) {
-    console.error('Update room type error:', error);
-    
-    if (error.message.includes('not found')) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'ROOM_TYPE_NOT_FOUND',
-          message: error.message
-        }
-      });
-    }
-
-    if (error.message.includes('already exists')) {
-      return res.status(409).json({
-        success: false,
-        error: {
-          code: 'DUPLICATE_ROOM_TYPE',
-          message: error.message
-        }
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to update room type'
-      }
-    });
-  }
-};
-
-/**
- * Delete room type (Admin/Manager only)
- * DELETE /api/v1/rooms/types/:id
- */
-const deleteRoomType = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await RoomTypeDAO.delete(id);
-
-    return res.status(200).json({
-      success: true,
-      message: result.message
-    });
-
-  } catch (error) {
-    console.error('Delete room type error:', error);
-    
-    if (error.message.includes('not found')) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'ROOM_TYPE_NOT_FOUND',
-          message: error.message
-        }
-      });
-    }
-
-    if (error.message.includes('Cannot delete')) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'CANNOT_DELETE',
-          message: error.message
-        }
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to delete room type'
-      }
-    });
-  }
-};
-
-/**
- * Bulk update room type prices (Admin/Manager only)
- * PATCH /api/v1/rooms/types/bulk-price-update
- */
-const bulkUpdatePrices = async (req, res) => {
-  try {
-    const { percentage, roomTypeIds } = req.body;
-    
-    if (!percentage || isNaN(percentage)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Percentage is required and must be a number'
-        }
-      });
-    }
-    
-    const result = await RoomTypeDAO.bulkUpdatePrices({ percentage, roomTypeIds });
-
-    return res.status(200).json({
-      success: true,
-      data: result,
-      message: result.message
-    });
-
-  } catch (error) {
-    console.error('Bulk update prices error:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: error.message || 'Failed to update prices'
-      }
-    });
-  }
-};
-
-module.exports = {
-  checkAvailability,
-  getRoomTypes,
-  getRoomTypeById,
-  createRoomType,
-  updateRoomType,
-  deleteRoomType,
-  bulkUpdatePrices
-};
+module.exports = roomController;

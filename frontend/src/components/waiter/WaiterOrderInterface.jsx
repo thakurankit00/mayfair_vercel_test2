@@ -7,6 +7,7 @@ import {
   restaurantMenuApi,
   restaurantOrderApi
 } from '../../services/restaurantApi';
+import { roomApi } from '../../services/roomApi';
 import LoadingSpinner from '../common/LoadingSpinner';
 import BillModal from '../payment/BillModal';
 import PaymentModal from '../payment/PaymentModal';
@@ -21,10 +22,13 @@ const WaiterOrderInterface = () => {
   const [selectedTable, setSelectedTable] = useState(null);
   const [menu, setMenu] = useState([]);
   const [currentOrders, setCurrentOrders] = useState([]);
+  const [occupiedRooms, setOccupiedRooms] = useState([]);
   
   // Order building state
   const [activeOrder, setActiveOrder] = useState(null);
   const [cart, setCart] = useState([]);
+  const [orderType, setOrderType] = useState('dine-in'); // 'dine-in' or 'room-service'
+  const [selectedRoom, setSelectedRoom] = useState(null);
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
     lastName: '',
@@ -40,6 +44,20 @@ const WaiterOrderInterface = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
+
+  // Load occupied rooms
+  const loadOccupiedRooms = async () => {
+    try {
+      console.log('🏨 [ROOMS] Fetching occupied rooms...');
+      const roomsData = await roomApi.getOccupiedRooms();
+      setOccupiedRooms(roomsData.rooms || []);
+      console.log('🏨 [ROOMS] Occupied rooms loaded:', roomsData.rooms?.length || 0);
+    } catch (err) {
+      console.error('❌ [ROOMS] Failed to fetch occupied rooms:', err);
+      alert('Failed to load occupied rooms. Room service may not be available.');
+      setOccupiedRooms([]);
+    }
+  };
 
   // Load initial data
   useEffect(() => {
@@ -68,6 +86,9 @@ const WaiterOrderInterface = () => {
       setRestaurants(restaurantsData.restaurants || []);
       setCurrentOrders(sortedOrders);
 
+      // Load occupied rooms separately
+      await loadOccupiedRooms();
+
       // Refresh tables to update status (available -> has orders)
       if (selectedRestaurant) {
         const tablesData = await restaurantTableApi.getTables(selectedRestaurant);
@@ -75,6 +96,7 @@ const WaiterOrderInterface = () => {
       }
 
     } catch (err) {
+      console.error('❌ [INIT] Failed to load initial data:', err);
       setError(err.message || 'Failed to load initial data');
     } finally {
       setLoading(false);
@@ -83,6 +105,38 @@ const WaiterOrderInterface = () => {
 
   loadInitialData();
 }, [user.id, user.role]);
+
+// Refresh occupied rooms periodically and on booking updates
+useEffect(() => {
+  const refreshInterval = setInterval(() => {
+    if (orderType === 'room-service') {
+      loadOccupiedRooms();
+    }
+  }, 30000); // Refresh every 30 seconds
+
+  return () => clearInterval(refreshInterval);
+}, [orderType]);
+
+// Listen for booking calendar updates (if socket is available)
+useEffect(() => {
+  if (emitEvent && notifications) {
+    const handleBookingUpdate = (notification) => {
+      if (notification.type === 'booking-update' || notification.type === 'room-status-change') {
+        console.log('📅 [BOOKING] Room status updated, refreshing occupied rooms...');
+        loadOccupiedRooms();
+      }
+    };
+
+    // Listen for booking-related notifications
+    const bookingNotifications = notifications.filter(n => 
+      ['booking-update', 'room-status-change', 'check-in', 'check-out'].includes(n.type)
+    );
+    
+    if (bookingNotifications.length > 0) {
+      loadOccupiedRooms();
+    }
+  }
+}, [notifications, emitEvent]);
 
 // Load restaurant-specific data when restaurant is selected
 useEffect(() => {
@@ -115,6 +169,7 @@ useEffect(() => {
 // Load orders function
 const loadOrders = async () => {
   try {
+    console.log('📝 [ORDERS] Refreshing orders...');
     const orderFilters = {};
     if (user.role === 'waiter') {
       orderFilters.waiter_id = user.id;
@@ -128,7 +183,9 @@ const loadOrders = async () => {
     });
     
     setCurrentOrders(sortedOrders);
+    console.log('📝 [ORDERS] Orders refreshed:', sortedOrders.length);
   } catch (err) {
+    console.error('❌ [ORDERS] Failed to load orders:', err);
     setError(err.message || 'Failed to load orders');
   }
 };
@@ -140,7 +197,29 @@ const startNewOrder = (table) => {
     tableId: table.id,
     tableName: table.table_name || `Table ${table.table_number}`,
     restaurantId: selectedRestaurant,
+    orderType: 'dine-in',
     rounds: []
+  });
+  setCart([]);
+};
+
+// Start new room service order
+const startRoomServiceOrder = (room) => {
+  console.log('🏨 [ORDER] Starting room service order for room:', room.room_number);
+  setSelectedRoom(room);
+  setActiveOrder({
+    roomId: room.id,
+    roomNumber: room.room_number,
+    guestName: `${room.guest_first_name} ${room.guest_last_name}`,
+    restaurantId: selectedRestaurant,
+    orderType: 'room-service',
+    rounds: []
+  });
+  setCustomerInfo({
+    firstName: room.guest_first_name || '',
+    lastName: room.guest_last_name || '',
+    phone: room.guest_phone || '',
+    email: room.guest_email || ''
   });
   setCart([]);
 };
@@ -173,6 +252,25 @@ const addNewRound = () => {
   setSpecialInstructions('');
 };
 
+// Validate order before submission
+const validateOrder = () => {
+  if (activeOrder.orderType === 'dine-in' && !activeOrder.tableId) {
+    throw new Error('Please select a table for dine-in order');
+  }
+  
+  if (activeOrder.orderType === 'room-service') {
+    if (!activeOrder.roomId) {
+      throw new Error('Please select a room for room service order');
+    }
+    
+    // Check if room is still occupied
+    const roomStillOccupied = occupiedRooms.find(room => room.id === activeOrder.roomId);
+    if (!roomStillOccupied) {
+      throw new Error('Selected room is no longer occupied. Please refresh and select another room.');
+    }
+  }
+};
+
 // Submit order round
 const submitOrderRound = async () => {
   if (cart.length === 0) return;
@@ -180,18 +278,34 @@ const submitOrderRound = async () => {
   try {
     setLoading(true);
     
+    // Validate order before submission
+    validateOrder();
+    
+    console.log(`📝 [ORDER] Submitting ${activeOrder.orderType} order:`, {
+      type: activeOrder.orderType,
+      location: activeOrder.orderType === 'dine-in' ? `Table ${activeOrder.tableId}` : `Room ${activeOrder.roomNumber}`,
+      items: cart.length
+    });
+    
     const orderData = {
       restaurant_id: selectedRestaurant,
-      table_id: activeOrder.tableId,
+      order_type: activeOrder.orderType,
       customer_info: customerInfo,
       items: cart.map(item => ({
         menu_item_id: item.id,
         quantity: item.quantity,
         special_instructions: item.specialInstructions
       })),
-      special_instructions: specialInstructions,
-      order_type: 'dine-in'
+      special_instructions: specialInstructions
     };
+
+    // Add table or room specific data
+    if (activeOrder.orderType === 'dine-in') {
+      orderData.table_id = activeOrder.tableId;
+    } else if (activeOrder.orderType === 'room-service') {
+      orderData.room_id = activeOrder.roomId;
+      orderData.guest_name = activeOrder.guestName;
+    }
 
     let response;
     if (activeOrder.latestOrderId) {
@@ -224,11 +338,15 @@ const submitOrderRound = async () => {
     setCart([]);
     setSpecialInstructions('');
     
-    // Refresh orders
+    // Refresh orders and rooms if room service
     await loadOrders();
+    if (activeOrder.orderType === 'room-service') {
+      await loadOccupiedRooms();
+    }
     
-    console.log('✅ Order round submitted successfully');
+    console.log('✅ [ORDER] Order round submitted successfully');
   } catch (err) {
+    console.error('❌ [ORDER] Failed to submit order:', err);
     setError(err.message || 'Failed to submit order');
   } finally {
     setLoading(false);
@@ -236,8 +354,11 @@ const submitOrderRound = async () => {
 };
 
   const finishOrderSession = () => {
+    console.log('📝 [ORDER] Finishing order session');
     setActiveOrder(null);
     setSelectedTable(null);
+    setSelectedRoom(null);
+    setOrderType('dine-in');
     setCart([]);
     setCustomerInfo({ firstName: '', lastName: '', phone: '', email: '' });
     setSpecialInstructions('');
@@ -455,12 +576,16 @@ const submitOrderRound = async () => {
           selectedRestaurant={selectedRestaurant}
           onRestaurantChange={setSelectedRestaurant}
           tables={tables}
+          occupiedRooms={occupiedRooms}
           menu={menu}
           activeOrder={activeOrder}
           cart={cart}
+          orderType={orderType}
+          onOrderTypeChange={setOrderType}
           customerInfo={customerInfo}
           specialInstructions={specialInstructions}
           onStartNewOrder={startNewOrder}
+          onStartRoomServiceOrder={startRoomServiceOrder}
           onAddItemToCart={addItemToCart}
           onUpdateCartItem={updateCartItem}
           onRemoveFromCart={removeFromCart}
@@ -471,6 +596,12 @@ const submitOrderRound = async () => {
           onUpdateSpecialInstructions={setSpecialInstructions}
           cartTotal={cartTotal}
           loading={loading}
+          selectedRoom={selectedRoom}
+          setSelectedRoom={setSelectedRoom}
+          setSelectedTable={setSelectedTable}
+          setActiveOrder={setActiveOrder}
+          setCart={setCart}
+          loadOccupiedRooms={loadOccupiedRooms}
         />
       )}
 
@@ -528,10 +659,12 @@ const submitOrderRound = async () => {
 // New Order Tab Component
 const NewOrderTab = ({ 
   restaurants, selectedRestaurant, onRestaurantChange,
-  tables, menu, activeOrder, cart, customerInfo, specialInstructions,
-  onStartNewOrder, onAddItemToCart, onUpdateCartItem, onRemoveFromCart,
+  tables, occupiedRooms, menu, activeOrder, cart, orderType, onOrderTypeChange,
+  customerInfo, specialInstructions, onStartNewOrder, onStartRoomServiceOrder,
+  onAddItemToCart, onUpdateCartItem, onRemoveFromCart,
   onAddNewRound, onSubmitOrderRound, onFinishOrderSession,
-  onUpdateCustomerInfo, onUpdateSpecialInstructions, cartTotal, loading
+  onUpdateCustomerInfo, onUpdateSpecialInstructions, cartTotal, loading,
+  selectedRoom, setSelectedRoom, setSelectedTable, setActiveOrder, setCart, loadOccupiedRooms
 }) => {
   const [menuFilter, setMenuFilter] = useState('all');
   
@@ -560,8 +693,39 @@ const NewOrderTab = ({
           </select>
         </div>
 
-        {/* Table Selection */}
+        {/* Order Type Selection */}
         {selectedRestaurant && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">Order Type</h3>
+            <select
+              value={orderType}
+              onChange={(e) => {
+                onOrderTypeChange(e.target.value);
+                // Reset selections when changing order type
+                if (e.target.value === 'dine-in') {
+                  setSelectedRoom(null);
+                } else {
+                  setSelectedTable(null);
+                }
+                setActiveOrder(null);
+                setCart([]);
+              }}
+              className="w-full border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="dine-in">🍽️ Dine-In</option>
+              <option value="room-service">🏨 Room Service</option>
+            </select>
+            
+            {orderType === 'room-service' && occupiedRooms.length === 0 && (
+              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                ⚠️ No occupied rooms available. Room service is currently unavailable.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Table Selection - Dine In */}
+        {selectedRestaurant && orderType === 'dine-in' && (
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="font-semibold text-gray-900 mb-4">Select Table</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -599,6 +763,67 @@ const NewOrderTab = ({
           </div>
         )}
 
+        {/* Room Selection - Room Service */}
+        {selectedRestaurant && orderType === 'room-service' && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Select Room</h3>
+              <button
+                onClick={loadOccupiedRooms}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                disabled={loading}
+              >
+                🔄 Refresh
+              </button>
+            </div>
+            
+            {/* Room Dropdown */}
+            <select
+              value={selectedRoom?.id || ''}
+              onChange={(e) => {
+                const room = occupiedRooms.find(r => r.id === e.target.value);
+                if (room) onStartRoomServiceOrder(room);
+              }}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 mb-4"
+            >
+              <option value="">Choose Occupied Room</option>
+              {occupiedRooms.map(room => (
+                <option key={room.id} value={room.id}>
+                  Room {room.room_number} - {room.guest_first_name} {room.guest_last_name}
+                </option>
+              ))}
+            </select>
+            
+            {/* Selected Room Details */}
+            {selectedRoom && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="font-medium text-blue-900">
+                  Room {selectedRoom.room_number}
+                </div>
+                <div className="text-sm text-blue-800">
+                  Guest: {selectedRoom.guest_first_name} {selectedRoom.guest_last_name}
+                </div>
+                <div className="text-xs text-blue-600">
+                  Check-in: {new Date(selectedRoom.check_in_date).toLocaleDateString()}
+                </div>
+                {selectedRoom.guest_phone && (
+                  <div className="text-xs text-blue-600">
+                    Phone: {selectedRoom.guest_phone}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {occupiedRooms.length === 0 && (
+              <div className="text-center py-4 text-gray-500">
+                <div className="text-2xl mb-2">🏨</div>
+                <p>No occupied rooms available</p>
+                <p className="text-xs mt-1">Room service is not available at this time</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Current Order Session */}
         {activeOrder && (
           <div className="bg-white rounded-lg shadow p-6">
@@ -613,8 +838,22 @@ const NewOrderTab = ({
             </div>
             
             <div className="space-y-2 text-sm">
+              {activeOrder.orderType === 'dine-in' ? (
+                <div>
+                  <span className="font-medium">Table:</span> {activeOrder.tableName}
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <span className="font-medium">Room:</span> {activeOrder.roomNumber}
+                  </div>
+                  <div>
+                    <span className="font-medium">Guest:</span> {activeOrder.guestName}
+                  </div>
+                </>
+              )}
               <div>
-                <span className="font-medium">Table:</span> {activeOrder.tableName}
+                <span className="font-medium">Type:</span> {activeOrder.orderType === 'dine-in' ? 'Dine-In' : 'Room Service'}
               </div>
               <div>
                 <span className="font-medium">Rounds:</span> {activeOrder.rounds.length}
@@ -880,12 +1119,21 @@ const ActiveOrdersTab = ({
                 </span>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600 mb-4">
                 <div>
                   <span className="font-medium">Customer:</span> {order.first_name} {order.last_name}
                 </div>
                 <div>
-                  <span className="font-medium">Table:</span> {order.table_number}
+                  <span className="font-medium">
+                    {order.order_type === 'room-service' ? 'Room:' : 'Table:'}
+                  </span> 
+                  {order.order_type === 'room-service' 
+                    ? `${order.room_number} (${order.guest_name})`
+                    : order.table_number
+                  }
+                </div>
+                <div>
+                  <span className="font-medium">Type:</span> {order.order_type === 'room-service' ? 'Room Service' : 'Dine-In'}
                 </div>
                 <div>
                   <span className="font-medium">Total:</span> ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}

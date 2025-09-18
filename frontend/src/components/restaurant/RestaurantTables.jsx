@@ -4,6 +4,8 @@ import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
 import ReservationModal from './ReservationModal';
 import ReservationDetailsModal from './ReservationDetailsModal';
+import TableFloorLayout from './TableFloorLayout';
+import TableDetailsModal from './TableDetailsModal';
 import io from 'socket.io-client';
 
 const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
@@ -16,6 +18,8 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [socket, setSocket] = useState(null);
+  const [viewMode, setViewMode] = useState('floor'); // 'floor' or 'grid'
+  const [showTableDetails, setShowTableDetails] = useState(false);
 
   // Initialize socket connection
   useEffect(() => {
@@ -113,33 +117,14 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
   };
 
   const handleTableAction = async (table) => {
-    if (table.booking_status === 'booked') {
-      // Find and show reservation details for this table
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        const reservationData = await restaurantReservationApi.getReservations({
-          date_from: today,
-          date_to: today
-        });
-        
-        const tableReservation = reservationData.reservations?.find(
-          r => r.table_id === table.id && ['confirmed', 'seated'].includes(r.status)
-        );
-        
-        if (tableReservation) {
-          setSelectedReservation(tableReservation);
-          setShowDetailsModal(true);
-        } else {
-          setError(`Table ${table.table_number} appears to be booked but no reservation details found.`);
-        }
-      } catch (err) {
-        setError(`Error loading reservation details: ${err.message}`);
-      }
-    } else {
-      // Open reservation modal with pre-filled table
-      setSelectedTable(table);
-      setShowReservationModal(true);
-    }
+    setSelectedTable(table);
+    setShowTableDetails(true);
+  };
+
+  const handleTableReserve = (table) => {
+    setShowTableDetails(false);
+    setSelectedTable(table);
+    setShowReservationModal(true);
   };
 
   const handleReservationSaved = () => {
@@ -206,7 +191,27 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">Restaurant Tables</h3>
+        <div className="flex items-center space-x-4">
+          <h3 className="text-lg font-semibold text-gray-900">Restaurant Tables</h3>
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('floor')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'floor' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Floor Layout
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Grid View
+            </button>
+          </div>
+        </div>
         {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
           <button
             onClick={() => setShowAddTableModal(true)}
@@ -254,46 +259,56 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
         </div>
       )}
 
-      {/* Tables Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {tables.map((table) => (
-          <div key={table.id} className="bg-white rounded-lg shadow p-6 border">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-lg font-semibold text-gray-900">
-                Table {table.table_number}
-              </h4>
-              <div className="flex items-center space-x-2">
-                {getStatusBadge(table.booking_status)}
+      {/* Tables Display */}
+      {viewMode === 'floor' ? (
+        <TableFloorLayout 
+          tables={tables}
+          onTableClick={handleTableAction}
+          userRole={userRole}
+          onTableEdit={handleTableEdited}
+          onTableDelete={handleTableDeleted}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {tables.map((table) => (
+            <div key={table.id} className="bg-white rounded-lg shadow p-6 border">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-lg font-semibold text-gray-900">
+                  Table {table.table_number}
+                </h4>
+                <div className="flex items-center space-x-2">
+                  {getStatusBadge(table.booking_status)}
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-2 text-sm text-gray-600 mb-4">
-              <div className="flex items-center justify-between">
-                <span>Capacity:</span>
-                <span className="font-medium">{table.capacity} guests</span>
+              <div className="space-y-2 text-sm text-gray-600 mb-4">
+                <div className="flex items-center justify-between">
+                  <span>Capacity:</span>
+                  <span className="font-medium">{table.capacity} guests</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Location:</span>
+                  <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
+                    {table.location?.replace('_', ' ') || 'N/A'}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Location:</span>
-                <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                  {table.location?.replace('_', ' ') || 'N/A'}
-                </span>
-              </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex justify-center space-x-2">
-              {getActionButton(table)}
-              {['admin', 'manager'].includes(userRole) && (
-                <EditTableModal
-                  item={table}
-                  onEdit={handleTableEdited}
-                  onDelete={handleTableDeleted}
-                />
-              )}
+              {/* Action Buttons */}
+              <div className="flex justify-center space-x-2">
+                {getActionButton(table)}
+                {['admin', 'manager'].includes(userRole) && (
+                  <EditTableModal
+                    item={table}
+                    onEdit={handleTableEdited}
+                    onDelete={handleTableDeleted}
+                  />
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Empty State */}
       {selectedRestaurant && tables.length === 0 && !loading && (
@@ -331,6 +346,18 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
             setSelectedTable(null);
           }}
           onSave={handleReservationSaved}
+        />
+      )}
+
+      {/* Table Details Modal */}
+      {showTableDetails && selectedTable && (
+        <TableDetailsModal
+          table={selectedTable}
+          onClose={() => {
+            setShowTableDetails(false);
+            setSelectedTable(null);
+          }}
+          onReserve={handleTableReserve}
         />
       )}
 
