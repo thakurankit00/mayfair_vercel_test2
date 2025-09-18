@@ -27,7 +27,7 @@ const WaiterOrderInterface = () => {
   // Order building state
   const [activeOrder, setActiveOrder] = useState(null);
   const [cart, setCart] = useState([]);
-  const [orderType, setOrderType] = useState('dine-in'); // 'dine-in' or 'room-service'
+  const [orderType, setOrderType] = useState('restaurant'); // 'restaurant' or 'room-service'
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
@@ -197,7 +197,7 @@ const startNewOrder = (table) => {
     tableId: table.id,
     tableName: table.table_name || `Table ${table.table_number}`,
     restaurantId: selectedRestaurant,
-    orderType: 'dine-in',
+    orderType: 'restaurant',
     rounds: []
   });
   setCart([]);
@@ -254,8 +254,8 @@ const addNewRound = () => {
 
 // Validate order before submission
 const validateOrder = () => {
-  if (activeOrder.orderType === 'dine-in' && !activeOrder.tableId) {
-    throw new Error('Please select a table for dine-in order');
+  if (activeOrder.orderType === 'restaurant' && !activeOrder.tableId) {
+    throw new Error('Please select a table for restaurant order');
   }
   
   if (activeOrder.orderType === 'room-service') {
@@ -283,7 +283,7 @@ const submitOrderRound = async () => {
     
     console.log(`📝 [ORDER] Submitting ${activeOrder.orderType} order:`, {
       type: activeOrder.orderType,
-      location: activeOrder.orderType === 'dine-in' ? `Table ${activeOrder.tableId}` : `Room ${activeOrder.roomNumber}`,
+      location: activeOrder.orderType === 'restaurant' ? `Table ${activeOrder.tableId}` : `Room ${activeOrder.roomNumber}`,
       items: cart.length
     });
     
@@ -300,7 +300,7 @@ const submitOrderRound = async () => {
     };
 
     // Add table or room specific data
-    if (activeOrder.orderType === 'dine-in') {
+    if (activeOrder.orderType === 'restaurant') {
       orderData.table_id = activeOrder.tableId;
     } else if (activeOrder.orderType === 'room-service') {
       orderData.room_id = activeOrder.roomId;
@@ -358,7 +358,7 @@ const submitOrderRound = async () => {
     setActiveOrder(null);
     setSelectedTable(null);
     setSelectedRoom(null);
-    setOrderType('dine-in');
+    setOrderType('restaurant');
     setCart([]);
     setCustomerInfo({ firstName: '', lastName: '', phone: '', email: '' });
     setSpecialInstructions('');
@@ -702,7 +702,7 @@ const NewOrderTab = ({
               onChange={(e) => {
                 onOrderTypeChange(e.target.value);
                 // Reset selections when changing order type
-                if (e.target.value === 'dine-in') {
+                if (e.target.value === 'restaurant') {
                   setSelectedRoom(null);
                 } else {
                   setSelectedTable(null);
@@ -712,7 +712,7 @@ const NewOrderTab = ({
               }}
               className="w-full border border-gray-300 rounded-md px-3 py-2"
             >
-              <option value="dine-in">🍽️ Dine-In</option>
+              <option value="restaurant">🍽️ Restaurant</option>
               <option value="room-service">🏨 Room Service</option>
             </select>
             
@@ -724,8 +724,8 @@ const NewOrderTab = ({
           </div>
         )}
 
-        {/* Table Selection - Dine In */}
-        {selectedRestaurant && orderType === 'dine-in' && (
+        {/* Table Selection - restaurant */}
+        {selectedRestaurant && orderType === 'restaurant' && (
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="font-semibold text-gray-900 mb-4">Select Table</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -838,7 +838,7 @@ const NewOrderTab = ({
             </div>
             
             <div className="space-y-2 text-sm">
-              {activeOrder.orderType === 'dine-in' ? (
+              {activeOrder.orderType === 'restaurant' ? (
                 <div>
                   <span className="font-medium">Table:</span> {activeOrder.tableName}
                 </div>
@@ -853,7 +853,7 @@ const NewOrderTab = ({
                 </>
               )}
               <div>
-                <span className="font-medium">Type:</span> {activeOrder.orderType === 'dine-in' ? 'Dine-In' : 'Room Service'}
+                <span className="font-medium">Type:</span> {activeOrder.orderType === 'restaurant' ? 'Restaurant' : 'Room Service'}
               </div>
               <div>
                 <span className="font-medium">Rounds:</span> {activeOrder.rounds.length}
@@ -1133,7 +1133,7 @@ const ActiveOrdersTab = ({
                   }
                 </div>
                 <div>
-                  <span className="font-medium">Type:</span> {order.order_type === 'room-service' ? 'Room Service' : 'Dine-In'}
+                  <span className="font-medium">Type:</span> {order.order_type === 'room-service' ? 'Room Service' : 'Restaurant'}
                 </div>
                 <div>
                   <span className="font-medium">Total:</span> ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}
