@@ -183,10 +183,39 @@ const BookingCalendar = () => {
   };
 
   // Handle date click for new booking
-  const handleDateClick = (date) => {
+  const handleDateClick = (date, room = null) => {
     setSelectedDate(date);
-    setSelectedBooking(null);
+    setSelectedBooking(room ? { room_id: room.id, room_number: room.room_number } : null);
     setShowBookingModal(true);
+  };
+
+  // Handle booking update (drag & resize)
+  const handleBookingUpdate = async (bookingId, updates) => {
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (response.ok) {
+        // Reload calendar data to reflect changes
+        loadCalendarData();
+
+        // Show success notification (optional)
+        console.log('Booking updated successfully');
+      } else {
+        console.error('Failed to update booking');
+        // Reload to revert changes
+        loadCalendarData();
+      }
+    } catch (error) {
+      console.error('Error updating booking:', error);
+      // Reload to revert changes
+      loadCalendarData();
+    }
   };
 
   // Handle booking modal close
@@ -443,6 +472,7 @@ const BookingCalendar = () => {
             onBookingHover={handleBookingHover}
             onBookingClick={handleBookingClick}
             onDateClick={handleDateClick}
+            onBookingUpdate={handleBookingUpdate}
           />
         )}
       </div>

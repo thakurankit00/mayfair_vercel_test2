@@ -14,6 +14,7 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
     adults: 1,
     children: 0,
     status: 'pending',
+    rate_type: 'EP', // Default to European Plan
     special_requests: '',
     guest_info: {
       firstName: '',
@@ -35,6 +36,7 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
         adults: booking.adults || 1,
         children: booking.children || 0,
         status: booking.status || 'pending',
+        rate_type: booking.rate_type || 'EP',
         special_requests: booking.special_requests || '',
         guest_info: {
           firstName: booking.guest_info?.firstName || booking.customer_name?.split(' ')[0] || '',
@@ -292,6 +294,28 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
               </select>
             </div>
           )}
+
+          {/* Rate Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Rate Type *
+            </label>
+            <select
+              name="rate_type"
+              value={formData.rate_type}
+              onChange={handleInputChange}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="EP">EP - European Plan (Room only)</option>
+              <option value="CP">CP - Continental Plan (Room + breakfast)</option>
+              <option value="MAP">MAP - Modified American Plan (Room + breakfast + one major meal)</option>
+              <option value="AP">AP - American Plan (Room + all meals)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Select the meal plan included with this booking
+            </p>
+          </div>
 
           {/* Guest Information */}
           <div className="border-t pt-4">
