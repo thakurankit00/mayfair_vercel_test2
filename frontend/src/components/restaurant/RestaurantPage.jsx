@@ -197,13 +197,16 @@ const RestaurantPage = () => {
             <MenuTab
               menu={menu}
               setMenu={setMenu}
-              
+
               userRole={user.role}
               selectedRestaurant={selectedRestaurant}
               restaurants={restaurants}
               onEditCategory={(category) => {
                 setSelectedCategory(category);
                 setShowEditCategoryModal(true);
+              }}
+              onAddCategory={() => {
+                setShowAddCategoryModal(true);
               }}
             />
           )}
@@ -287,7 +290,7 @@ const RestaurantPage = () => {
   );
 };
 
-const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRestaurant, restaurants }) => {
+const MenuTab = ({ menu, setMenu, userRole, onEditCategory, onAddCategory, selectedRestaurant, restaurants }) => {
   const [selectedType, setSelectedType] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -536,12 +539,20 @@ const MenuTab = ({ menu, setMenu, userRole, onClose, onEditCategory, selectedRes
           </select>
         </div>
         {['admin', 'manager'].includes(userRole) && selectedRestaurant && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
-          >
-            Add Menu Item
-          </button>
+          <div className="flex space-x-3">
+            <button
+              onClick={() => onAddCategory()}
+              className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-lightorange"
+            >
+              Create New Category
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="bg-light-orange text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            >
+              Add Menu Item
+            </button>
+          </div>
         )}
       </div>
 

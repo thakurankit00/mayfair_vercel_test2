@@ -260,7 +260,11 @@ export const restaurantMenuApi = {
 
   // Create menu category
   createCategory: async (categoryData) => {
-    const response = await api.post('/restaurant/menu/categories', categoryData);
+    const { restaurant_id, ...data } = categoryData;
+    if (!restaurant_id) {
+      throw new Error('Restaurant ID is required to create a category');
+    }
+    const response = await api.post(`/restaurant/restaurants/${restaurant_id}/menu/categories`, data);
     return response.data.data;
   },
 
