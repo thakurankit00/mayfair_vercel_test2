@@ -5,6 +5,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import DatePicker from '../common/DatePicker';
 import CalendarGrid from './CalendarGrid';
 import BookingTooltip from './BookingTooltip';
+import BookingModal from './BookingModal';
 
 const BookingCalendar = () => {
   const { user } = useAuth();
@@ -30,6 +31,14 @@ const BookingCalendar = () => {
   // Tooltip state
   const [hoveredBooking, setHoveredBooking] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
+  // Booking modal state
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  // Calendar view mode state
+  const [calendarViewMode, setCalendarViewMode] = useState('monthly'); // 'monthly' or 'timeline'
 
   // Calculate date range based on current view
   const getDateRange = () => {
@@ -166,6 +175,32 @@ const BookingCalendar = () => {
     }
   };
 
+  // Handle booking click for editing
+  const handleBookingClick = (booking) => {
+    setSelectedBooking(booking);
+    setSelectedDate(null);
+    setShowBookingModal(true);
+  };
+
+  // Handle date click for new booking
+  const handleDateClick = (date) => {
+    setSelectedDate(date);
+    setSelectedBooking(null);
+    setShowBookingModal(true);
+  };
+
+  // Handle booking modal close
+  const handleBookingModalClose = () => {
+    setShowBookingModal(false);
+    setSelectedBooking(null);
+    setSelectedDate(null);
+  };
+
+  // Handle booking save (refresh calendar data)
+  const handleBookingSave = () => {
+    loadCalendarData();
+  };
+
   if (!['receptionist', 'manager', 'admin'].includes(user?.role)) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -179,8 +214,8 @@ const BookingCalendar = () => {
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      {/* Fixed Header - Always visible */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-30">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Booking Calendar</h1>
@@ -188,7 +223,7 @@ const BookingCalendar = () => {
               Manage room reservations and view occupancy patterns
             </p>
           </div>
-          
+
           {/* Quick Stats */}
           <div className="mt-4 sm:mt-0 flex flex-wrap gap-4">
             <div className="bg-blue-50 px-3 py-1 rounded-lg">
@@ -207,8 +242,8 @@ const BookingCalendar = () => {
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3">
+      {/* Fixed Controls - Part of sticky header */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sticky top-[120px] sm:top-[140px] z-20">
         <div className="flex flex-col gap-3 sm:gap-4">
           {/* Navigation */}
           <div className="flex items-center justify-center sm:justify-start">
@@ -303,27 +338,60 @@ const BookingCalendar = () => {
                 />
               </div>
 
-              {/* View Type Toggle */}
+              {/* Calendar View Mode Toggle */}
               <div className="">
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  View Type
+                  Calendar View
                 </label>
                 <div className="flex bg-gray-100 rounded-lg p-1">
-                  {['month', 'quarter', 'year'].map(type => (
-                    <button
-                      key={type}
-                      onClick={() => setViewType(type)}
-                      className={`px-3 py-1 text-sm rounded-md capitalize transition-colors min-w-16 ${
-                        viewType === type
-                          ? 'bg-white text-blue-700 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setCalendarViewMode('monthly')}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors min-w-20 flex items-center space-x-1 ${
+                      calendarViewMode === 'monthly'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <span>📅</span>
+                    <span>Monthly</span>
+                  </button>
+                  <button
+                    onClick={() => setCalendarViewMode('timeline')}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors min-w-20 flex items-center space-x-1 ${
+                      calendarViewMode === 'timeline'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <span>📊</span>
+                    <span>Timeline</span>
+                  </button>
                 </div>
               </div>
+
+              {/* View Type Toggle (for timeline view) */}
+              {calendarViewMode === 'timeline' && (
+                <div className="">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Time Range
+                  </label>
+                  <div className="flex bg-gray-100 rounded-lg p-1">
+                    {['month', 'quarter', 'year'].map(type => (
+                      <button
+                        key={type}
+                        onClick={() => setViewType(type)}
+                        className={`px-3 py-1 text-sm rounded-md capitalize transition-colors min-w-16 ${
+                          viewType === type
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Refresh Button */}
               <div className="">
@@ -346,8 +414,8 @@ const BookingCalendar = () => {
         </div>
       </div>
 
-      {/* Calendar Grid */}
-      <div className="flex-1 overflow-hidden">
+      {/* Main Calendar Container - Single Scroll Area */}
+      <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <LoadingSpinner />
@@ -371,7 +439,10 @@ const BookingCalendar = () => {
             bookings={calendarData?.bookings || []}
             dateRange={calendarData?.date_range || {}}
             viewType={viewType}
+            calendarViewMode={calendarViewMode}
             onBookingHover={handleBookingHover}
+            onBookingClick={handleBookingClick}
+            onDateClick={handleDateClick}
           />
         )}
       </div>
@@ -383,6 +454,15 @@ const BookingCalendar = () => {
           position={tooltipPosition}
         />
       )}
+
+      {/* Booking Modal */}
+      <BookingModal
+        isOpen={showBookingModal}
+        onClose={handleBookingModalClose}
+        booking={selectedBooking}
+        selectedDate={selectedDate}
+        onSave={handleBookingSave}
+      />
     </div>
   );
 };
