@@ -12,6 +12,9 @@ const ChefDashboard = () => {
   const [error, setError] = useState('');
   const [updateLoading, setUpdateLoading] = useState({});
   const [orderActionLoading, setOrderActionLoading] = useState({});
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellingItem, setCancellingItem] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState('');
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
@@ -155,6 +158,49 @@ const ChefDashboard = () => {
     }
   };
 
+  // Cancel item with reason
+  const handleCancelItem = (orderId, itemId, itemName) => {
+    setCancellingItem({ orderId, itemId, itemName });
+    setShowCancelModal(true);
+    setCancellationReason('');
+  };
+
+  // Confirm item cancellation
+  const confirmCancelItem = async () => {
+    if (!cancellingItem || !cancellationReason.trim()) {
+      return;
+    }
+
+    try {
+      setUpdateLoading(prev => ({ ...prev, [cancellingItem.itemId]: true }));
+
+      await orderApi.cancelOrderItem(
+        cancellingItem.orderId,
+        cancellingItem.itemId,
+        cancellationReason.trim()
+      );
+
+      // Remove item from local state immediately for better UX
+      setDashboardData(prev => ({
+        ...prev,
+        orders: prev.orders.map(order => ({
+          ...order,
+          items: order.items.filter(item => item.id !== cancellingItem.itemId)
+        })).filter(order => order.items.length > 0) // Remove orders with no items
+      }));
+
+      setShowCancelModal(false);
+      setCancellingItem(null);
+      setCancellationReason('');
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to cancel item');
+      fetchDashboardData();
+    } finally {
+      setUpdateLoading(prev => ({ ...prev, [cancellingItem.itemId]: false }));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -271,6 +317,7 @@ const ChefDashboard = () => {
                 key={order.id}
                 order={order}
                 onUpdateItemStatus={updateItemStatus}
+                onCancelItem={handleCancelItem}
                 onAcceptOrder={acceptOrder}
                 onRejectOrder={rejectOrder}
                 updateLoading={updateLoading}
@@ -280,12 +327,61 @@ const ChefDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Cancel Item Modal */}
+      {showCancelModal && cancellingItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Cancel Order Item
+            </h2>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Why are you canceling "{cancellingItem.itemName}"?
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cancellation Reason *
+              </label>
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-red-500 focus:border-red-500"
+                rows={3}
+                placeholder="Please provide a reason for cancelling this item..."
+                required
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setCancellingItem(null);
+                  setCancellationReason('');
+                }}
+                className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmCancelItem}
+                disabled={!cancellationReason.trim()}
+                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                Confirm Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 // Individual Order with Items Component
-const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder, updateLoading, orderActionLoading }) => {
+const OrderItemCard = ({ order, onUpdateItemStatus, onCancelItem, onAcceptOrder, onRejectOrder, updateLoading, orderActionLoading }) => {
   const [expandedItems, setExpandedItems] = useState({});
   const [chefNotes, setChefNotes] = useState({});
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -532,27 +628,52 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onAcceptOrder, onRejectOrder
                         >
                           {updateLoading[item.id] ? 'Updating...' : 'Start Preparing'}
                         </button>
+                        <button
+                          onClick={() => onCancelItem(order.id, item.id, item.item_name || item.name)}
+                          disabled={updateLoading[item.id]}
+                          className="inline-flex items-center px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          {updateLoading[item.id] ? 'Cancelling...' : 'Cancel Item'}
+                        </button>
                       </>
                     )}
                     
                     {item.status === 'accepted' && (
-                      <button
-                        onClick={() => onUpdateItemStatus(order.id, item.id, 'preparing', chefNotes[item.id] || '')}
-                        disabled={updateLoading[item.id]}
-                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
-                      >
-                        {updateLoading[item.id] ? 'Updating...' : 'Start Preparing'}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => onUpdateItemStatus(order.id, item.id, 'preparing', chefNotes[item.id] || '')}
+                          disabled={updateLoading[item.id]}
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
+                        >
+                          {updateLoading[item.id] ? 'Updating...' : 'Start Preparing'}
+                        </button>
+                        <button
+                          onClick={() => onCancelItem(order.id, item.id, item.item_name || item.name)}
+                          disabled={updateLoading[item.id]}
+                          className="inline-flex items-center px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          {updateLoading[item.id] ? 'Cancelling...' : 'Cancel Item'}
+                        </button>
+                      </>
                     )}
                     
                     {item.status === 'preparing' && (
-                      <button
-                        onClick={() => onUpdateItemStatus(order.id, item.id, 'ready', chefNotes[item.id] || '')}
-                        disabled={updateLoading[item.id]}
-                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                      >
-                        {updateLoading[item.id] ? 'Updating...' : 'Ready to Serve'}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => onUpdateItemStatus(order.id, item.id, 'ready', chefNotes[item.id] || '')}
+                          disabled={updateLoading[item.id]}
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {updateLoading[item.id] ? 'Updating...' : 'Ready to Serve'}
+                        </button>
+                        <button
+                          onClick={() => onCancelItem(order.id, item.id, item.item_name || item.name)}
+                          disabled={updateLoading[item.id]}
+                          className="inline-flex items-center px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          {updateLoading[item.id] ? 'Cancelling...' : 'Cancel Item'}
+                        </button>
+                      </>
                     )}
 
                     {(item.status === 'ready' || item.status === 'ready_to_serve') && (

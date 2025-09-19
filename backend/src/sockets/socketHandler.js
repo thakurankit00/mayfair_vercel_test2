@@ -475,6 +475,226 @@ class SocketHandler {
     this.handleKitchenOrderAction(actionData);
   }
 
+  // New methods for order management
+  emitOrderUpdate(updateData) {
+    const { orderId, orderNumber, tableId, specialInstructions, updatedBy, updatedByRole, waiterId, customerId } = updateData;
+
+    console.log(`📝 [SOCKET] Emitting order update:`, updateData);
+
+    // Notify the waiter who owns the order
+    if (waiterId) {
+      this.io.to(`user-${waiterId}`).emit('order-updated', {
+        orderId,
+        orderNumber,
+        tableId,
+        specialInstructions,
+        updatedBy,
+        updatedByRole,
+        timestamp: new Date()
+      });
+    }
+
+    // Notify all waiters
+    this.io.to('waiters').emit('order-updated', {
+      orderId,
+      orderNumber,
+      tableId,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify kitchen staff about order changes
+    this.io.to('kitchen-chef').emit('order-updated', {
+      orderId,
+      orderNumber,
+      tableId,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    this.io.to('kitchen-bartender').emit('order-updated', {
+      orderId,
+      orderNumber,
+      tableId,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify managers and admins
+    this.io.to('managers').emit('order-updated', {
+      orderId,
+      orderNumber,
+      tableId,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify the customer if applicable
+    if (customerId) {
+      this.io.to(`user-${customerId}`).emit('order-updated', {
+        orderId,
+        orderNumber,
+        tableId,
+        specialInstructions,
+        timestamp: new Date()
+      });
+    }
+  }
+
+  emitOrderItemUpdate(updateData) {
+    const { orderId, orderNumber, itemId, quantity, specialInstructions, updatedBy, updatedByRole, waiterId, customerId } = updateData;
+
+    console.log(`🍽️ [SOCKET] Emitting order item update:`, updateData);
+
+    // Notify the waiter who owns the order
+    if (waiterId) {
+      this.io.to(`user-${waiterId}`).emit('order-item-updated', {
+        orderId,
+        orderNumber,
+        itemId,
+        quantity,
+        specialInstructions,
+        updatedBy,
+        updatedByRole,
+        timestamp: new Date()
+      });
+    }
+
+    // Notify all waiters
+    this.io.to('waiters').emit('order-item-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      quantity,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify kitchen staff about item changes
+    this.io.to('kitchen-chef').emit('order-item-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      quantity,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    this.io.to('kitchen-bartender').emit('order-item-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      quantity,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify managers and admins
+    this.io.to('managers').emit('order-item-updated', {
+      orderId,
+      orderNumber,
+      itemId,
+      quantity,
+      specialInstructions,
+      updatedBy,
+      updatedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify the customer if applicable
+    if (customerId) {
+      this.io.to(`user-${customerId}`).emit('order-item-updated', {
+        orderId,
+        orderNumber,
+        itemId,
+        quantity,
+        specialInstructions,
+        timestamp: new Date()
+      });
+    }
+  }
+
+  emitOrderItemDelete(deleteData) {
+    const { orderId, orderNumber, itemId, deletedBy, deletedByRole, waiterId, customerId } = deleteData;
+
+    console.log(`🗑️ [SOCKET] Emitting order item delete:`, deleteData);
+
+    // Notify the waiter who owns the order
+    if (waiterId) {
+      this.io.to(`user-${waiterId}`).emit('order-item-deleted', {
+        orderId,
+        orderNumber,
+        itemId,
+        deletedBy,
+        deletedByRole,
+        timestamp: new Date()
+      });
+    }
+
+    // Notify all waiters
+    this.io.to('waiters').emit('order-item-deleted', {
+      orderId,
+      orderNumber,
+      itemId,
+      deletedBy,
+      deletedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify kitchen staff about item deletion
+    this.io.to('kitchen-chef').emit('order-item-deleted', {
+      orderId,
+      orderNumber,
+      itemId,
+      deletedBy,
+      deletedByRole,
+      timestamp: new Date()
+    });
+
+    this.io.to('kitchen-bartender').emit('order-item-deleted', {
+      orderId,
+      orderNumber,
+      itemId,
+      deletedBy,
+      deletedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify managers and admins
+    this.io.to('managers').emit('order-item-deleted', {
+      orderId,
+      orderNumber,
+      itemId,
+      deletedBy,
+      deletedByRole,
+      timestamp: new Date()
+    });
+
+    // Notify the customer if applicable
+    if (customerId) {
+      this.io.to(`user-${customerId}`).emit('order-item-deleted', {
+        orderId,
+        orderNumber,
+        itemId,
+        timestamp: new Date()
+      });
+    }
+  }
+
   emitOrderTransferred(transferData) {
     const { orderId, orderNumber, fromKitchen, toKitchen, reason, waiterId } = transferData;
 

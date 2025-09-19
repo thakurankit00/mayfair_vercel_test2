@@ -45,6 +45,14 @@ const WaiterOrderInterface = () => {
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
   const [selectedOrderForPayment, setSelectedOrderForPayment] = useState(null);
 
+  // Order management states
+  const [showEditOrderModal, setShowEditOrderModal] = useState(false);
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
+
   // Load occupied rooms
   const loadOccupiedRooms = async () => {
     try {
@@ -367,13 +375,57 @@ const submitOrderRound = async () => {
   const generateBill = async (order) => {
     try {
       setLoading(true);
+      console.log('🧾 [WAITER] Generating bill for order:', order.id);
+
       const billData = await restaurantOrderApi.generateBill(order.id);
-      setSelectedOrderForBill({ ...order, bill: billData.bill });
+      console.log('🧾 [WAITER] Bill generated successfully:', billData);
+
+      // Set the order with the bill data for the modal
+      setSelectedOrderForBill({
+        ...order,
+        bill: billData.bill || billData, // Handle both response formats
+        status: 'billed' // Update status to reflect bill generation
+      });
       setShowBillModal(true);
+
       // Refresh orders to show updated status
       await loadOrders();
+      setError(''); // Clear any previous errors
     } catch (err) {
-      setError(err.message || 'Failed to generate bill');
+      console.error('🧾 [WAITER] Error generating bill:', err);
+      const errorMessage = err.response?.data?.error?.message || err.message || 'Failed to generate bill';
+
+      // Handle specific error cases
+      if (err.response?.data?.error?.code === 'ORDER_NOT_READY_FOR_BILLING') {
+        setError('This order has already been billed or is not ready for billing.');
+      } else {
+        setError(errorMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const viewBill = async (order) => {
+    try {
+      setLoading(true);
+      console.log('🧾 [WAITER] Viewing bill for order:', order.id);
+
+      const billData = await restaurantOrderApi.getBill(order.id);
+      console.log('🧾 [WAITER] Bill retrieved successfully:', billData);
+
+      // Set the order with the bill data for the modal
+      setSelectedOrderForBill({
+        ...order,
+        bill: billData.bill || billData, // Handle both response formats
+      });
+      setShowBillModal(true);
+
+      setError(''); // Clear any previous errors
+    } catch (err) {
+      console.error('🧾 [WAITER] Error viewing bill:', err);
+      const errorMessage = err.response?.data?.error?.message || err.message || 'Failed to retrieve bill';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -399,6 +451,82 @@ const submitOrderRound = async () => {
       console.log('✅ Order completed successfully');
     } catch (err) {
       setError(err.message || 'Failed to complete order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle edit order details
+  const handleEditOrder = (order) => {
+    setEditingOrder(order);
+    setShowEditOrderModal(true);
+  };
+
+  // Handle edit order item
+  const handleEditItem = (order, item) => {
+    setEditingOrder(order);
+    setEditingItem(item);
+    setShowEditItemModal(true);
+  };
+
+  // Handle delete order item - show confirmation modal
+  const handleDeleteItem = (orderId, itemId, item, order) => {
+    setItemToDelete({ orderId, itemId, item, order });
+    setShowDeleteConfirmModal(true);
+  };
+
+  // Confirm delete order item
+  const confirmDeleteItem = async () => {
+    if (!itemToDelete) return;
+
+    try {
+      setLoading(true);
+      await restaurantOrderApi.deleteOrderItem(itemToDelete.orderId, itemToDelete.itemId);
+      await loadOrders();
+      setError('');
+      setShowDeleteConfirmModal(false);
+      setItemToDelete(null);
+    } catch (err) {
+      setError(err.message || 'Failed to delete item');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Cancel delete order item
+  const cancelDeleteItem = () => {
+    setShowDeleteConfirmModal(false);
+    setItemToDelete(null);
+  };
+
+  // Handle update order details
+  const handleUpdateOrderDetails = async (orderData) => {
+    try {
+      setLoading(true);
+      await restaurantOrderApi.updateOrderDetails(editingOrder.id, orderData);
+      await loadOrders();
+      setShowEditOrderModal(false);
+      setEditingOrder(null);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to update order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle update order item
+  const handleUpdateOrderItem = async (itemData) => {
+    try {
+      setLoading(true);
+      await restaurantOrderApi.updateOrderItem(editingOrder.id, editingItem.id, itemData);
+      await loadOrders();
+      setShowEditItemModal(false);
+      setEditingOrder(null);
+      setEditingItem(null);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to update item');
     } finally {
       setLoading(false);
     }
@@ -609,10 +737,15 @@ const submitOrderRound = async () => {
         <ActiveOrdersTab
           orders={currentOrders.filter(o => ['pending', 'preparing', 'ready', 'billed', 'payment_pending', 'paid'].includes(o.status))}
           onGenerateBill={generateBill}
+          onViewBill={viewBill}
           onRequestPayment={handleRequestPayment}
           onCompleteOrder={handleCompleteOrder}
           onAddOrderToExisting={handleAddOrderToExisting}
+          onEditOrder={handleEditOrder}
+          onEditItem={handleEditItem}
+          onDeleteItem={handleDeleteItem}
           loading={loading}
+          tables={tables}
         />
       )}
 
@@ -650,6 +783,43 @@ const submitOrderRound = async () => {
             setSelectedOrderForPayment(null);
           }}
           onPaymentInitiated={handlePaymentInitiated}
+        />
+      )}
+
+      {/* Edit Order Modal */}
+      {showEditOrderModal && editingOrder && (
+        <EditOrderModal
+          order={editingOrder}
+          tables={tables}
+          onClose={() => {
+            setShowEditOrderModal(false);
+            setEditingOrder(null);
+          }}
+          onSave={handleUpdateOrderDetails}
+        />
+      )}
+
+      {/* Edit Item Modal */}
+      {showEditItemModal && editingItem && editingOrder && (
+        <EditItemModal
+          order={editingOrder}
+          item={editingItem}
+          onClose={() => {
+            setShowEditItemModal(false);
+            setEditingItem(null);
+            setEditingOrder(null);
+          }}
+          onSave={handleUpdateOrderItem}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmModal && itemToDelete && (
+        <DeleteConfirmationModal
+          item={itemToDelete.item}
+          order={itemToDelete.order}
+          onConfirm={confirmDeleteItem}
+          onCancel={cancelDeleteItem}
         />
       )}
     </div>
@@ -1085,10 +1255,15 @@ const NewOrderTab = ({
 const ActiveOrdersTab = ({
   orders,
   onGenerateBill,
+  onViewBill,
   onRequestPayment,
   onCompleteOrder,
   loading,
-  onAddOrderToExisting
+  onAddOrderToExisting,
+  onEditOrder,
+  onEditItem,
+  onDeleteItem,
+  tables
 }) => {
   return (
     <div className="space-y-4">
@@ -1151,21 +1326,49 @@ const ActiveOrdersTab = ({
               {order.items && order.items.length > 0 && (
                 <div className="mb-4">
                   <h5 className="font-medium text-gray-900 mb-2">Order Items:</h5>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {order.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
-                        <span>{item.quantity}x {item.item_name || item.name}</span>
+                      <div key={idx} className="flex justify-between items-center text-sm bg-gray-50 p-3 rounded">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium">{item.quantity}x {item.item_name || item.name}</span>
+                            <span className={`px-2 py-1 text-xs rounded ${
+                              item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              item.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
+                              item.status === 'ready' ? 'bg-green-100 text-green-800' :
+                              item.status === 'served' ? 'bg-gray-100 text-gray-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {item.status || 'pending'}
+                            </span>
+                          </div>
+                          {item.special_instructions && (
+                            <div className="text-xs text-gray-600 mt-1">
+                              Note: {item.special_instructions}
+                            </div>
+                          )}
+                        </div>
                         <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 text-xs rounded ${
-                            item.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            item.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                            item.status === 'ready' ? 'bg-green-100 text-green-800' :
-                            item.status === 'served' ? 'bg-gray-100 text-gray-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {item.status || 'pending'}
-                          </span>
-                          <span>₹{(item.unit_price * item.quantity).toFixed(2)}</span>
+                          <span className="font-medium">₹{(item.unit_price * item.quantity).toFixed(2)}</span>
+                          {/* Edit/Delete buttons - only show for pending/accepted items */}
+                          {['pending', 'accepted'].includes(item.status) && (
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => onEditItem(order, item)}
+                                className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded border border-blue-300 hover:bg-blue-50"
+                                title="Edit item"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => onDeleteItem(order.id, item.id, item, order)}
+                                className="text-red-600 hover:text-red-800 text-xs px-2 py-1 rounded border border-red-300 hover:bg-red-50"
+                                title="Delete item"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1186,13 +1389,22 @@ const ActiveOrdersTab = ({
               )}
 
               {order.status === 'billed' && (
-                <button
-                  onClick={() => onRequestPayment(order)}
-                  disabled={loading}
-                  className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  💳 Request Payment
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => onViewBill(order)}
+                    disabled={loading}
+                    className="bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-gray-700 disabled:opacity-50 w-full"
+                  >
+                     View Bill
+                  </button>
+                  <button
+                    onClick={() => onRequestPayment(order)}
+                    disabled={loading}
+                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 w-full"
+                  >
+                    💳 Request Payment
+                  </button>
+                </div>
               )}
 
               {order.status === 'paid' && (
@@ -1206,13 +1418,22 @@ const ActiveOrdersTab = ({
               )}
 
               {['pending', 'preparing'].includes(order.status) && (
-                <button
-                  onClick={() => onAddOrderToExisting(order)}
-                  disabled={loading}
-                  className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 disabled:opacity-50"
-                >
-                  + Add Order
-                </button>
+                <>
+                  <button
+                    onClick={() => onEditOrder(order)}
+                    disabled={loading}
+                    className="bg-gray-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-gray-700 disabled:opacity-50 mr-2"
+                  >
+                    ✏️ Edit Order
+                  </button>
+                  <button
+                    onClick={() => onAddOrderToExisting(order)}
+                    disabled={loading}
+                    className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 disabled:opacity-50"
+                  >
+                    + Add Order
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1233,9 +1454,31 @@ const ActiveOrdersTab = ({
 const OrderHistoryTab = ({ orders, loading, userRole }) => {
   const [showBillModal, setShowBillModal] = useState(false);
   const [selectedOrderForBill, setSelectedOrderForBill] = useState(null);
-  const handleViewBill = (order) => {
-    setSelectedOrderForBill(order);
-    setShowBillModal(true);
+  const [billLoading, setBillLoading] = useState(false);
+  const [billError, setBillError] = useState('');
+
+  const handleViewBill = async (order) => {
+    try {
+      setBillLoading(true);
+      setBillError('');
+      console.log('🧾 [HISTORY] Viewing bill for order:', order.id);
+
+      const billData = await restaurantOrderApi.getBill(order.id);
+      console.log('🧾 [HISTORY] Bill retrieved successfully:', billData);
+
+      // Set the order with the bill data for the modal
+      setSelectedOrderForBill({
+        ...order,
+        bill: billData.bill || billData, // Handle both response formats
+      });
+      setShowBillModal(true);
+    } catch (err) {
+      console.error('🧾 [HISTORY] Error viewing bill:', err);
+      const errorMessage = err.response?.data?.error?.message || err.message || 'Failed to retrieve bill';
+      setBillError(errorMessage);
+    } finally {
+      setBillLoading(false);
+    }
   };
   const handleMarkAsPaid = (order) => {
     alert('Mark as Paid: Implement backend call to update status to paid.');
@@ -1368,6 +1611,224 @@ const OrderHistoryTab = ({ orders, loading, userRole }) => {
   );
 };
 
+// Edit Order Modal Component
+const EditOrderModal = ({ order, tables, onClose, onSave }) => {
+  const [tableId, setTableId] = useState(order.table_id || '');
+  const [specialInstructions, setSpecialInstructions] = useState(order.special_instructions || '');
 
+  const handleSave = () => {
+    const updateData = {};
+    if (tableId !== order.table_id) updateData.table_id = tableId;
+    if (specialInstructions !== order.special_instructions) updateData.special_instructions = specialInstructions;
+
+    onSave(updateData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Edit Order #{order.order_number}
+        </h2>
+
+        <div className="space-y-4">
+          {order.order_type === 'restaurant' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Table
+              </label>
+              <select
+                value={tableId}
+                onChange={(e) => setTableId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select Table</option>
+                {tables.map(table => (
+                  <option key={table.id} value={table.id}>
+                    Table {table.table_number} ({table.capacity} seats)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Special Instructions
+            </label>
+            <textarea
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              rows={3}
+              placeholder="Any special instructions for this order..."
+            />
+          </div>
+        </div>
+
+        <div className="flex space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Edit Item Modal Component
+const EditItemModal = ({ order, item, onClose, onSave }) => {
+  const [quantity, setQuantity] = useState(item.quantity || 1);
+  const [specialInstructions, setSpecialInstructions] = useState(item.special_instructions || '');
+
+  const handleSave = () => {
+    onSave({
+      quantity: parseInt(quantity),
+      special_instructions: specialInstructions
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Edit Item: {item.item_name || item.name}
+        </h2>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Quantity
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Special Instructions
+            </label>
+            <textarea
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              rows={3}
+              placeholder="Any special instructions for this item..."
+            />
+          </div>
+
+          <div className="text-sm text-gray-600">
+            <p>Unit Price: ₹{item.unit_price}</p>
+            <p className="font-medium">Total: ₹{(item.unit_price * quantity).toFixed(2)}</p>
+          </div>
+        </div>
+
+        <div className="flex space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Delete Confirmation Modal Component
+const DeleteConfirmationModal = ({ item, order, onConfirm, onCancel }) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+        <div className="flex items-center mb-4">
+          <div className="flex-shrink-0">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+          </div>
+          <div className="ml-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Confirm Delete Item
+            </h3>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-gray-600 mb-4">
+            Are you sure you want to delete this item from the order? This action cannot be undone.
+          </p>
+
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="font-medium text-gray-900">
+                  {item.item_name || item.name}
+                </h4>
+                <p className="text-sm text-gray-600">
+                  Quantity: {item.quantity}
+                </p>
+                {item.special_instructions && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Special instructions: {item.special_instructions}
+                  </p>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="font-medium text-gray-900">
+                  ₹{(item.unit_price * item.quantity).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 text-sm text-gray-600">
+            <p>Order: #{order.order_number}</p>
+            {order.table?.table_number && (
+              <p>Table: {order.table.table_number}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex space-x-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 bg-gray-200 text-gray-900 px-4 py-2 rounded-md font-medium hover:bg-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md font-medium hover:bg-red-700 transition-colors"
+          >
+            Delete Item
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default WaiterOrderInterface;

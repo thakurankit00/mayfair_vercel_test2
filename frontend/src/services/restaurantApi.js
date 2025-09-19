@@ -391,6 +391,32 @@ export const restaurantOrderApi = {
     return response.data.data;
   },
 
+  // Update order details
+  updateOrderDetails: async (orderId, orderData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}`, orderData);
+    return response.data.data;
+  },
+
+  // Update order item
+  updateOrderItem: async (orderId, itemId, itemData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}`, itemData);
+    return response.data.data;
+  },
+
+  // Delete order item
+  deleteOrderItem: async (orderId, itemId) => {
+    const response = await api.delete(`/restaurant/orders/${orderId}/items/${itemId}`);
+    return response.data;
+  },
+
+  // Cancel order item
+  cancelOrderItem: async (orderId, itemId, cancellation_reason) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/items/${itemId}/cancel`, {
+      cancellation_reason
+    });
+    return response.data.data;
+  },
+
   // Get kitchen dashboard data
   getKitchenDashboard: async (restaurantId = null) => {
     const params = {};
@@ -414,6 +440,12 @@ export const restaurantOrderApi = {
   // Generate bill for order
   generateBill: async (orderId) => {
     const response = await api.post(`/restaurant/orders/${orderId}/bill`);
+    return response.data.data;
+  },
+
+  // Get existing bill for order
+  getBill: async (orderId) => {
+    const response = await api.get(`/restaurant/orders/${orderId}/bill`);
     return response.data.data;
   },
 

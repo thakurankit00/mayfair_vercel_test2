@@ -29,9 +29,14 @@ const {
   getOrders,
   getOrderById,
   updateOrderStatus,
+  updateOrderDetails,
   updateOrderItemStatus,
+  updateOrderItem,
+  deleteOrderItem,
+  cancelOrderItem,
   addOrderItems,
   generateBill,
+  getBill,
   requestPayment,
   completeOrder,
   // Kitchen management
@@ -216,14 +221,29 @@ router.get('/orders/:id', authenticateToken, getOrderById);
 // Update order status (Staff+)
 router.put('/orders/:id/status', authenticateToken, requireRole(['receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin']), updateOrderStatus);
 
+// Update order details (Waiter/Manager/Admin)
+router.put('/orders/:id', authenticateToken, requireRole(['waiter', 'manager', 'admin']), updateOrderDetails);
+
 // Update order item status (Chef/Bartender/Manager/Admin)
 router.put('/orders/:orderId/items/:itemId/status', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), updateOrderItemStatus);
+
+// Update order item details (Waiter/Manager/Admin)
+router.put('/orders/:orderId/items/:itemId', authenticateToken, requireRole(['waiter', 'manager', 'admin']), updateOrderItem);
+
+// Delete order item (Waiter/Manager/Admin)
+router.delete('/orders/:orderId/items/:itemId', authenticateToken, requireRole(['waiter', 'manager', 'admin']), deleteOrderItem);
+
+// Cancel order item (Chef/Bartender/Manager/Admin)
+router.post('/orders/:orderId/items/:itemId/cancel', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), cancelOrderItem);
 
 // Add items to existing order (Protected)
 router.post('/orders/:id/items', authenticateToken, addOrderItems);
 
 // Generate bill for order (Waiter+)
 router.post('/orders/:orderId/bill', authenticateToken, requireRole(['waiter', 'manager', 'admin']), generateBill);
+
+// Get existing bill for order (Waiter+)
+router.get('/orders/:orderId/bill', authenticateToken, requireRole(['waiter', 'manager', 'admin']), getBill);
 
 // Request payment for order (Waiter+)
 router.post('/orders/:orderId/request-payment', authenticateToken, requireRole(['waiter', 'manager', 'admin']), requestPayment);

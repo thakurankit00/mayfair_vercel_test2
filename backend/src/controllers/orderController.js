@@ -609,12 +609,12 @@ const updateOrderItemStatus = async (req, res) => {
       });
     }
     
-    if (!status || !['pending', 'accepted', 'preparing', 'ready_to_serve', 'ready'].includes(status)) {
+    if (!status || !['pending', 'accepted', 'preparing', 'ready_to_serve', 'ready', 'cancelled'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Valid status is required (pending, accepted, preparing, ready_to_serve, ready)'
+          message: 'Valid status is required (pending, accepted, preparing, ready_to_serve, ready, cancelled)'
         }
       });
     }
@@ -656,7 +656,13 @@ const updateOrderItemStatus = async (req, res) => {
       updateData.completed_at = new Date();
     }
 
-    if (chef_notes) {
+    if (status === 'cancelled') {
+      updateData.cancelled_at = new Date();
+      updateData.cancelled_by = userId;
+      updateData.cancellation_reason = chef_notes || 'Cancelled by kitchen staff';
+    }
+
+    if (chef_notes && status !== 'cancelled') {
       updateData.special_instructions = chef_notes; // Store chef notes in special_instructions for now
     }
     
@@ -664,7 +670,23 @@ const updateOrderItemStatus = async (req, res) => {
       .where('id', itemId)
       .update(updateData)
       .returning('*');
-    
+
+    // If item was cancelled, log it for audit trail
+    if (status === 'cancelled') {
+      await db('order_item_cancellation_logs').insert({
+        id: uuidv4(),
+        order_id: orderId,
+        order_item_id: itemId,
+        cancelled_by: userId,
+        cancellation_reason: chef_notes || 'Cancelled by kitchen staff',
+        item_name: existingItem.item_name || 'Unknown Item',
+        item_quantity: existingItem.quantity,
+        item_price: existingItem.total_price,
+        cancelled_at: new Date(),
+        created_at: new Date()
+      });
+    }
+
     // Get order details for socket notification
     const order = await db('orders').where('id', orderId).first();
     
@@ -697,6 +719,547 @@ const updateOrderItemStatus = async (req, res) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: error.message || 'Failed to update order item status'
+      }
+    });
+  }
+};
+
+/**
+ * Update order item details (Waiter/Manager/Admin)
+ * PUT /api/v1/restaurant/orders/:orderId/items/:itemId
+ */
+const updateOrderItem = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { quantity, special_instructions } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!['waiter', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only waiters and managers can update order items'
+        }
+      });
+    }
+
+    if (!quantity || quantity < 1) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Valid quantity is required (minimum 1)'
+        }
+      });
+    }
+
+    const existingItem = await db('order_items')
+      .where('id', itemId)
+      .where('order_id', orderId)
+      .first();
+
+    if (!existingItem) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_ITEM_NOT_FOUND',
+          message: 'Order item not found'
+        }
+      });
+    }
+
+    // Check if order can be modified
+    const order = await db('orders').where('id', orderId).first();
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    if (['served', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_CANNOT_BE_MODIFIED',
+          message: 'Cannot modify completed or cancelled orders'
+        }
+      });
+    }
+
+    // Check if item has started preparation
+    if (['preparing', 'ready', 'ready_to_serve'].includes(existingItem.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ITEM_CANNOT_BE_MODIFIED',
+          message: 'Cannot modify items that are being prepared or ready'
+        }
+      });
+    }
+
+    // Check waiter permissions
+    if (userRole === 'waiter' && order.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only modify your own orders'
+        }
+      });
+    }
+
+    // Calculate new total price
+    const newTotalPrice = existingItem.unit_price * quantity;
+
+    const updateData = {
+      quantity: parseInt(quantity),
+      total_price: newTotalPrice,
+      updated_at: new Date()
+    };
+
+    if (special_instructions !== undefined) {
+      updateData.special_instructions = special_instructions;
+    }
+
+    const updatedItem = await db('order_items')
+      .where('id', itemId)
+      .update(updateData)
+      .returning('*');
+
+    // Update order total
+    const orderItems = await db('order_items')
+      .where('order_id', orderId)
+      .where('status', '!=', 'cancelled');
+
+    const newOrderTotal = orderItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0);
+
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        total_amount: newOrderTotal,
+        updated_at: new Date()
+      });
+
+    // Emit socket event for item update
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderItemUpdate({
+        orderId,
+        orderNumber: order.order_number,
+        itemId,
+        quantity,
+        specialInstructions: special_instructions,
+        updatedBy: userId,
+        updatedByRole: userRole,
+        waiterId: order.waiter_id,
+        customerId: order.user_id
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { item: updatedItem[0] },
+      message: 'Order item updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update order item error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to update order item'
+      }
+    });
+  }
+};
+
+/**
+ * Delete order item (Waiter/Manager/Admin)
+ * DELETE /api/v1/restaurant/orders/:orderId/items/:itemId
+ */
+const deleteOrderItem = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!['waiter', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only waiters and managers can delete order items'
+        }
+      });
+    }
+
+    const existingItem = await db('order_items')
+      .where('id', itemId)
+      .where('order_id', orderId)
+      .first();
+
+    if (!existingItem) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_ITEM_NOT_FOUND',
+          message: 'Order item not found'
+        }
+      });
+    }
+
+    // Check if order can be modified
+    const order = await db('orders').where('id', orderId).first();
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    if (['served', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_CANNOT_BE_MODIFIED',
+          message: 'Cannot delete items from completed or cancelled orders'
+        }
+      });
+    }
+
+    // Check if item has started preparation
+    if (['preparing', 'ready', 'ready_to_serve'].includes(existingItem.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ITEM_CANNOT_BE_DELETED',
+          message: 'Cannot delete items that are being prepared or ready'
+        }
+      });
+    }
+
+    // Check waiter permissions
+    if (userRole === 'waiter' && order.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only delete items from your own orders'
+        }
+      });
+    }
+
+    // Delete the item
+    await db('order_items').where('id', itemId).del();
+
+    // Update order total
+    const remainingItems = await db('order_items')
+      .where('order_id', orderId)
+      .where('status', '!=', 'cancelled');
+
+    const newOrderTotal = remainingItems.reduce((sum, item) => sum + parseFloat(item.total_price), 0);
+
+    await db('orders')
+      .where('id', orderId)
+      .update({
+        total_amount: newOrderTotal,
+        updated_at: new Date()
+      });
+
+    // If no items left, cancel the order
+    if (remainingItems.length === 0) {
+      await db('orders')
+        .where('id', orderId)
+        .update({
+          status: 'cancelled',
+          updated_at: new Date()
+        });
+    }
+
+    // Emit socket event for item deletion
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderItemDelete({
+        orderId,
+        orderNumber: order.order_number,
+        itemId,
+        deletedBy: userId,
+        deletedByRole: userRole,
+        waiterId: order.waiter_id,
+        customerId: order.user_id
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Order item deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete order item error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to delete order item'
+      }
+    });
+  }
+};
+
+/**
+ * Cancel order item (Chef/Bartender/Manager/Admin)
+ * POST /api/v1/restaurant/orders/:orderId/items/:itemId/cancel
+ */
+const cancelOrderItem = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { cancellation_reason } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!['chef', 'bartender', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only kitchen/bar staff can cancel items'
+        }
+      });
+    }
+
+    if (!cancellation_reason || cancellation_reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Cancellation reason is required'
+        }
+      });
+    }
+
+    const existingItem = await db('order_items')
+      .where('id', itemId)
+      .where('order_id', orderId)
+      .first();
+
+    if (!existingItem) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_ITEM_NOT_FOUND',
+          message: 'Order item not found'
+        }
+      });
+    }
+
+    // Check if item is already cancelled or completed
+    if (existingItem.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ITEM_ALREADY_CANCELLED',
+          message: 'Item is already cancelled'
+        }
+      });
+    }
+
+    if (existingItem.status === 'ready_to_serve') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ITEM_ALREADY_COMPLETED',
+          message: 'Cannot cancel item that is ready to serve'
+        }
+      });
+    }
+
+    // Update item to cancelled status
+    const updateData = {
+      status: 'cancelled',
+      cancelled_at: new Date(),
+      cancelled_by: userId,
+      cancellation_reason: cancellation_reason.trim(),
+      updated_at: new Date()
+    };
+
+    const updatedItem = await db('order_items')
+      .where('id', itemId)
+      .update(updateData)
+      .returning('*');
+
+    // Log cancellation for audit trail
+    await db('order_item_cancellation_logs').insert({
+      id: uuidv4(),
+      order_id: orderId,
+      order_item_id: itemId,
+      cancelled_by: userId,
+      cancellation_reason: cancellation_reason.trim(),
+      item_name: existingItem.item_name || 'Unknown Item',
+      item_quantity: existingItem.quantity,
+      item_price: existingItem.total_price,
+      cancelled_at: new Date(),
+      created_at: new Date()
+    });
+
+    // Get order details for socket notification
+    const order = await db('orders').where('id', orderId).first();
+
+    // Emit socket event for item cancellation
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderItemStatusUpdate({
+        orderId,
+        orderNumber: order.order_number,
+        itemId,
+        status: 'cancelled',
+        cancellationReason: cancellation_reason.trim(),
+        updatedBy: userId,
+        updatedByRole: userRole,
+        waiterId: order.waiter_id,
+        customerId: order.user_id
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { item: updatedItem[0] },
+      message: 'Order item cancelled successfully'
+    });
+
+  } catch (error) {
+    console.error('Cancel order item error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to cancel order item'
+      }
+    });
+  }
+};
+
+/**
+ * Update order details (Waiter/Manager/Admin)
+ * PUT /api/v1/restaurant/orders/:id
+ */
+const updateOrderDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { table_id, special_instructions } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (!['waiter', 'manager', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Only waiters and managers can update order details'
+        }
+      });
+    }
+
+    const existingOrder = await db('orders').where('id', id).first();
+
+    if (!existingOrder) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    // Check if order can be modified
+    if (['served', 'cancelled'].includes(existingOrder.status)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'ORDER_CANNOT_BE_MODIFIED',
+          message: 'Cannot modify completed or cancelled orders'
+        }
+      });
+    }
+
+    // Check waiter permissions
+    if (userRole === 'waiter' && existingOrder.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only modify your own orders'
+        }
+      });
+    }
+
+    const updateData = {
+      updated_at: new Date()
+    };
+
+    if (table_id !== undefined) {
+      // Validate table exists and is available
+      const table = await db('restaurant_tables').where('id', table_id).first();
+      if (!table) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_TABLE',
+            message: 'Table not found'
+          }
+        });
+      }
+      updateData.table_id = table_id;
+    }
+
+    if (special_instructions !== undefined) {
+      updateData.special_instructions = special_instructions;
+    }
+
+    const updatedOrder = await db('orders')
+      .where('id', id)
+      .update(updateData)
+      .returning('*');
+
+    // Emit socket event for order update
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      socketHandler.emitOrderUpdate({
+        orderId: id,
+        orderNumber: existingOrder.order_number,
+        tableId: table_id,
+        specialInstructions: special_instructions,
+        updatedBy: userId,
+        updatedByRole: userRole,
+        waiterId: existingOrder.waiter_id,
+        customerId: existingOrder.user_id
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { order: updatedOrder[0] },
+      message: 'Order details updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update order details error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to update order details'
       }
     });
   }
@@ -1602,7 +2165,7 @@ const generateBill = async (req, res) => {
     const { orderId } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
-    
+
     // Get order details
     const orderDetails = await getOrderDetails(orderId);
     
@@ -1626,7 +2189,7 @@ const generateBill = async (req, res) => {
         }
       });
     }
-    
+
     if (userRole === 'waiter' && orderDetails.waiter_id !== userId) {
       return res.status(403).json({
         success: false,
@@ -1679,6 +2242,35 @@ const generateBill = async (req, res) => {
       });
     }
 
+    // Check if bill already exists for this order
+    const existingBill = await db('bills').where('order_id', orderId).first();
+    if (existingBill) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'BILL_ALREADY_EXISTS',
+          message: 'Bill has already been generated for this order'
+        }
+      });
+    }
+
+    // Generate unique bill number
+    const billNumber = `BILL${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+
+    // Store bill in database
+    const [billId] = await db('bills').insert({
+      id: db.raw('gen_random_uuid()'),
+      order_id: orderId,
+      bill_number: billNumber,
+      subtotal: billData.summary.subtotal,
+      tax_amount: billData.summary.tax,
+      service_charge: 0,
+      discount: 0,
+      total_amount: billData.summary.total,
+      generated_by: userId,
+      generated_at: new Date()
+    }).returning('id');
+
     // Update order status to indicate bill generated
     await db('orders')
       .where('id', orderId)
@@ -1701,12 +2293,15 @@ const generateBill = async (req, res) => {
       });
     }
     
+    // Add bill number to the response
+    billData.billNumber = billNumber;
+
     return res.status(200).json({
       success: true,
       data: { bill: billData },
       message: 'Bill generated successfully'
     });
-    
+
   } catch (error) {
     console.error('Generate bill error:', error);
     return res.status(500).json({
@@ -1714,6 +2309,135 @@ const generateBill = async (req, res) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: error.message || 'Failed to generate bill'
+      }
+    });
+  }
+};
+
+/**
+ * Get existing bill for order
+ * GET /api/v1/restaurant/orders/:orderId/bill
+ */
+const getBill = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    console.log('🧾 [BILL] Get bill request:', { orderId, userId, userRole });
+
+    // Get order details
+    const orderDetails = await getOrderDetails(orderId);
+
+    if (!orderDetails) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'ORDER_NOT_FOUND',
+          message: 'Order not found'
+        }
+      });
+    }
+
+    console.log('🧾 [BILL] Order details retrieved:', orderDetails ? 'Found' : 'Not found');
+
+    // Check permissions
+    if (userRole === 'customer' && orderDetails.user_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only view bills for your own orders'
+        }
+      });
+    }
+
+    if (userRole === 'waiter' && orderDetails.waiter_id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'You can only view bills for orders assigned to you'
+        }
+      });
+    }
+
+    console.log('🧾 [BILL] Permission check:', {
+      userRole,
+      userId,
+      orderUserId: orderDetails.user_id,
+      orderWaiterId: orderDetails.waiter_id
+    });
+
+    // Get bill from database
+    const billRecord = await db('bills')
+      .select('*')
+      .where('order_id', orderId)
+      .first();
+
+    if (!billRecord) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'BILL_NOT_FOUND',
+          message: 'Bill not found for this order'
+        }
+      });
+    }
+
+    console.log('🧾 [BILL] Bill record found:', billRecord.bill_number);
+
+    // Get the user who generated the bill
+    const generatedByUser = await db('users')
+      .select('first_name', 'last_name', 'role')
+      .where('id', billRecord.generated_by)
+      .first();
+
+    // Construct bill data in the same format as generateBill
+    const billData = {
+      orderId,
+      orderNumber: orderDetails.order_number,
+      customer: {
+        name: `${orderDetails.first_name} ${orderDetails.last_name}`,
+        phone: orderDetails.phone
+      },
+      table: {
+        number: orderDetails.table_number,
+        location: orderDetails.table_location
+      },
+      items: orderDetails.items.map(item => ({
+        name: item.item_name,
+        quantity: item.quantity,
+        unitPrice: parseFloat(item.unit_price),
+        totalPrice: parseFloat(item.total_price)
+      })),
+      summary: {
+        subtotal: parseFloat(billRecord.subtotal),
+        tax: parseFloat(billRecord.tax_amount),
+        total: parseFloat(billRecord.total_amount)
+      },
+      generatedAt: billRecord.generated_at,
+      generatedBy: {
+        id: billRecord.generated_by,
+        name: generatedByUser ? `${generatedByUser.first_name} ${generatedByUser.last_name}` : 'Unknown',
+        role: generatedByUser ? generatedByUser.role : 'unknown'
+      },
+      billNumber: billRecord.bill_number
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: { bill: billData },
+      message: 'Bill retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('Get bill error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to retrieve bill'
       }
     });
   }
@@ -1902,9 +2626,14 @@ module.exports = {
   getOrders,
   getOrderById,
   updateOrderStatus,
+  updateOrderDetails,
   updateOrderItemStatus,
+  updateOrderItem,
+  deleteOrderItem,
+  cancelOrderItem,
   addOrderItems,
   generateBill,
+  getBill,
   requestPayment,
   completeOrder,
   // Kitchen management
