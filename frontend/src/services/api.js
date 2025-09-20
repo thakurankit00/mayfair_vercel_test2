@@ -186,22 +186,32 @@ export const userApi = {
 export const roomApi = {
   async getRoomTypes() {
     const response = await api.get('/rooms/types');
-    return response.data.roomTypes;
+    console.log('🏨 [API] Room types response:', response);
+    // Backend returns array directly, map to include totalRooms for frontend compatibility
+    return response.map(roomType => ({
+      ...roomType,
+      totalRooms: parseInt(roomType.total_rooms) || 0
+    }));
   },
 
   async getRoomTypeById(id) {
     const response = await api.get(`/rooms/types/${id}`);
-    return response.data.roomType;
+    console.log('🏨 [API] Room type by ID response:', response);
+    // Map the response to include totalRooms property for frontend compatibility
+    return {
+      ...response,
+      totalRooms: parseInt(response.total_rooms) || 0
+    };
   },
 
   async createRoomType(roomTypeData) {
     const response = await api.post('/rooms/types', roomTypeData);
-    return response.data.roomType;
+    return response;
   },
 
   async updateRoomType(id, roomTypeData) {
     const response = await api.put(`/rooms/types/${id}`, roomTypeData);
-    return response.data.roomType;
+    return response;
   },
 
   async deleteRoomType(id) {
@@ -224,15 +234,81 @@ export const roomApi = {
       adults: parseInt(adults),
       children: parseInt(children)
     };
-    
+
+    console.log('🏨 [API] Checking room availability with params:', params);
     const response = await api.get('/rooms/availability', { params });
-    return response.data.availableRooms;
+    console.log('🏨 [API] Room availability response:', response);
+    // Since api interceptor returns response.data, the response is already the data
+    return response.availableRooms || [];
   },
 
   // Booking management
   async createBooking(bookingData) {
     const response = await api.post('/bookings', bookingData);
     return response.data;
+  },
+
+  // Image management methods
+  async uploadRoomImages(formData) {
+    try {
+      console.log('🖼️ [API] Uploading room images...');
+      console.log('🖼️ [API] FormData contents:', Array.from(formData.entries()));
+
+      // Don't set Content-Type header - let axios set it automatically with boundary
+      const response = await api.post('/rooms/images', formData);
+      console.log('🖼️ [API] Room images uploaded successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to upload room images:', error);
+      console.error('❌ [API] Error details:', error.response?.data);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to upload room images');
+    }
+  },
+
+  async getRoomImages(roomTypeId = null, roomId = null) {
+    try {
+      console.log('🖼️ [API] Fetching room images...');
+      const params = {};
+      if (roomTypeId) params.room_type_id = roomTypeId;
+      if (roomId) params.room_id = roomId;
+
+      const response = await api.get('/rooms/images', { params });
+      console.log('🖼️ [API] Room images fetched successfully:', response);
+
+      // Return the data structure expected by the frontend
+      // Since api interceptor returns response.data, check both structures
+      return {
+        images: response.images || response.data?.images || [],
+        total_count: response.total_count || response.data?.total_count || 0
+      };
+    } catch (error) {
+      console.error('❌ [API] Failed to fetch room images:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to fetch room images');
+    }
+  },
+
+  async updateRoomImage(imageId, updateData) {
+    try {
+      console.log('🖼️ [API] Updating room image...');
+      const response = await api.put(`/rooms/images/${imageId}`, updateData);
+      console.log('🖼️ [API] Room image updated successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to update room image:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to update room image');
+    }
+  },
+
+  async deleteRoomImage(imageId) {
+    try {
+      console.log('🖼️ [API] Deleting room image...');
+      const response = await api.delete(`/rooms/images/${imageId}`);
+      console.log('🖼️ [API] Room image deleted successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to delete room image:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to delete room image');
+    }
   },
 
   async getBookings(params = {}) {

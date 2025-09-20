@@ -285,12 +285,16 @@ router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'barten
         'o.*',
         'rt.table_number',
         'rt.location as table_location',
+        'r.room_number',
+        'rb.guest_info',
         'u.first_name',
         'u.last_name',
         'w.first_name as waiter_first_name',
         'w.last_name as waiter_last_name'
       )
-      .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('room_bookings as rb', 'o.room_booking_id', 'rb.id')
+      .leftJoin('rooms as r', 'rb.room_id', 'r.id')
       .join('users as u', 'o.user_id', 'u.id')
       .leftJoin('users as w', 'o.waiter_id', 'w.id')
       .whereIn('o.status', ['pending', 'preparing'])

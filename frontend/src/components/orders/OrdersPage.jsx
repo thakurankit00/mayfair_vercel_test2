@@ -450,7 +450,27 @@ const handleCloseModal = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {order.table_number ? `Table ${order.table_number}` : 'Room Service'}
+                          {order.room_number ? (
+                            <span>
+                              Room {order.room_number}
+                              {order.guest_info && (() => {
+                                try {
+                                  const guestInfo = typeof order.guest_info === 'string'
+                                    ? JSON.parse(order.guest_info)
+                                    : order.guest_info;
+                                  return guestInfo?.first_name
+                                    ? ` - ${guestInfo.first_name} ${guestInfo.last_name || ''}`.trim()
+                                    : '';
+                                } catch (e) {
+                                  return '';
+                                }
+                              })()}
+                            </span>
+                          ) : order.table_number ? (
+                            `Table ${order.table_number}`
+                          ) : (
+                            'Walk-in'
+                          )}
                         </div>
                         {order.table_location && (
                           <div className="text-xs text-gray-500">

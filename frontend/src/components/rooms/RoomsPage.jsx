@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { roomApi, dashboardApi } from '../../services/api';
+import apiServices from '../../services/api';
 import AvailabilityChecker from './AvailabilityChecker';
 import RoomResults from './RoomResults';
 import PlatformIntegration from './PlatformIntegration';
+import RoomImageManager from './RoomImageManager';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 const RoomsPage = () => {
@@ -16,6 +17,7 @@ const RoomsPage = () => {
   // Modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState(null);
 
   // Load room types on component mount
@@ -25,7 +27,7 @@ const RoomsPage = () => {
 
   const loadRoomTypes = async () => {
     try {
-      const types = await roomApi.getRoomTypes();
+      const types = await apiServices.rooms.getRoomTypes();
       setRoomTypes(types);
     } catch (err) {
       console.error('Failed to load room types:', err);
@@ -50,7 +52,7 @@ const RoomsPage = () => {
 
   const handleEditRoomType = async (roomType) => {
     try {
-      const fullRoomType = await roomApi.getRoomTypeById(roomType.id);
+      const fullRoomType = await apiServices.rooms.getRoomTypeById(roomType.id);
       setSelectedRoomType(fullRoomType);
       setShowEditModal(true);
     } catch (err) {
@@ -60,7 +62,7 @@ const RoomsPage = () => {
 
   const handleViewRoomType = async (roomType) => {
     try {
-      const fullRoomType = await roomApi.getRoomTypeById(roomType.id);
+      const fullRoomType = await apiServices.rooms.getRoomTypeById(roomType.id);
       setSelectedRoomType(fullRoomType);
       setShowViewModal(true);
     } catch (err) {
@@ -68,9 +70,19 @@ const RoomsPage = () => {
     }
   };
 
+  const handleManageImages = (roomType) => {
+    setSelectedRoomType(roomType);
+    setShowImageModal(true);
+  };
+
+  const handleImagesUpdated = () => {
+    // Reload room types to get updated image counts
+    loadRoomTypes();
+  };
+
   const handleSaveRoomType = async (updatedData) => {
     try {
-      await roomApi.updateRoomType(selectedRoomType.id, updatedData);
+      await apiServices.rooms.updateRoomType(selectedRoomType.id, updatedData);
       setShowEditModal(false);
       setSelectedRoomType(null);
       await loadRoomTypes(); // Reload data
@@ -214,13 +226,20 @@ const RoomsPage = () => {
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <button 
+                        <button
+                          onClick={() => handleManageImages(roomType)}
+                          className="text-green-600 hover:text-green-700 text-sm font-medium"
+                          title="Manage Images"
+                        >
+                          🖼️ Images ({roomType.image_count || 0})
+                        </button>
+                        <button
                           onClick={() => handleEditRoomType(roomType)}
                           className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
                           Edit
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleViewRoomType(roomType)}
                           className="text-gray-600 hover:text-gray-700 text-sm font-medium"
                         >
@@ -270,6 +289,18 @@ const RoomsPage = () => {
             setShowViewModal(false);
             setSelectedRoomType(null);
           }}
+        />
+      )}
+
+      {/* Room Image Manager Modal */}
+      {showImageModal && selectedRoomType && (
+        <RoomImageManager
+          roomType={selectedRoomType}
+          onClose={() => {
+            setShowImageModal(false);
+            setSelectedRoomType(null);
+          }}
+          onImagesUpdated={handleImagesUpdated}
         />
       )}
     </div>
@@ -746,7 +777,7 @@ const RoomAvailabilityCounter = ({ type }) => {
   useEffect(() => {
     const fetchRoomMetrics = async () => {
       try {
-        const metrics = await dashboardApi.getMetrics();
+        const metrics = await apiServices.dashboard.getMetrics();
         if (metrics.rooms) {
           setCount(type === 'available' ? metrics.rooms.available : metrics.rooms.booked);
         }

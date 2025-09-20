@@ -19,23 +19,46 @@ const createOrder = async (req, res) => {
       table_reservation_id,
       order_type, // 'restaurant', 'bar', 'room_service','dine_in','takeway'
       kitchen_type,//'Bar Kitchen','Main Kitchen'
-      room_booking_id, // for room service
       restaurant_id, // which restaurant the order is for
       target_kitchen_id, // which kitchen should prepare the order
       items, // array of { menu_item_id, quantity, special_instructions }
       special_instructions
     } = req.body;
+
+    let room_booking_id = req.body.room_booking_id; // for room service
     
     const userId = req.user.id;
     const userRole = req.user.role;
     
     // Validation
-    if (!table_id || !order_type || !items || items.length === 0) {
+    if (!order_type || !items || items.length === 0) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Table, order type, and items are required'
+          message: 'Order type and items are required'
+        }
+      });
+    }
+
+    // Table validation - only required for dine-in orders
+    if ((order_type === 'dine_in' || order_type === 'restaurant') && !table_id) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Table is required for dine-in orders'
+        }
+      });
+    }
+
+    // Room validation - required for room service orders
+    if (order_type === 'room_service' && !room_booking_id && !req.body.room_number) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Room booking ID or room number is required for room service orders'
         }
       });
     }
@@ -54,37 +77,116 @@ const createOrder = async (req, res) => {
       }
     }
     
-    if (!['restaurant', 'bar', 'room_service','dine_in','takeway'].includes(order_type)) {
+    if (!['restaurant', 'bar', 'room_service', 'dine_in', 'takeaway'].includes(order_type)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Order type must be restaurant, bar, or room_service'
+          message: 'Order type must be restaurant, bar, room_service, dine_in, or takeaway'
         }
       });
     }
     
-    // Verify table exists and get restaurant info
-    const table = await db('restaurant_tables')
-      .select('restaurant_tables.*', 'restaurants.name as restaurant_name', 'restaurants.restaurant_type')
-      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
-      .where('restaurant_tables.id', table_id)
-      .where('restaurant_tables.is_active', true)
-      .where('restaurants.is_active', true)
-      .first();
-    
-    if (!table) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'TABLE_NOT_FOUND',
-          message: 'Table not found or restaurant not active'
+    // Verify table exists and get restaurant info (only for orders that require tables)
+    let table = null;
+    let finalRestaurantId = restaurant_id;
+
+    if (table_id) {
+      table = await db('restaurant_tables')
+        .select('restaurant_tables.*', 'restaurants.name as restaurant_name', 'restaurants.restaurant_type')
+        .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+        .where('restaurant_tables.id', table_id)
+        .where('restaurant_tables.is_active', true)
+        .where('restaurants.is_active', true)
+        .first();
+
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'TABLE_NOT_FOUND',
+            message: 'Table not found or restaurant not active'
+          }
+        });
+      }
+
+      // Auto-determine restaurant_id from table if not provided
+      finalRestaurantId = restaurant_id || table.restaurant_id;
+    } else if (order_type === 'takeaway') {
+      // For takeaway orders, use provided restaurant_id or default to first active restaurant
+      if (!restaurant_id) {
+        const defaultRestaurant = await db('restaurants')
+          .select('id')
+          .where('is_active', true)
+          .first();
+
+        if (!defaultRestaurant) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'NO_RESTAURANT_AVAILABLE',
+              message: 'No active restaurant available for takeaway orders'
+            }
+          });
         }
-      });
+
+        finalRestaurantId = defaultRestaurant.id;
+      }
+    } else if (order_type === 'room_service') {
+      // For room service orders, validate room booking
+      let roomBooking = null;
+
+      if (room_booking_id) {
+        // Use provided room booking ID
+        roomBooking = await db('room_bookings')
+          .select('room_bookings.*', 'rooms.room_number', 'rooms.floor')
+          .join('rooms', 'room_bookings.room_id', 'rooms.id')
+          .where('room_bookings.id', room_booking_id)
+          .where('room_bookings.status', 'checked_in')
+          .first();
+      } else if (req.body.room_number) {
+        // Find room booking by room number
+        roomBooking = await db('room_bookings')
+          .select('room_bookings.*', 'rooms.room_number', 'rooms.floor')
+          .join('rooms', 'room_bookings.room_id', 'rooms.id')
+          .where('rooms.room_number', req.body.room_number)
+          .where('room_bookings.status', 'checked_in')
+          .first();
+      }
+
+      if (!roomBooking) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'ROOM_NOT_AVAILABLE',
+            message: 'Room not found or not currently occupied'
+          }
+        });
+      }
+
+      // Use the hotel's restaurant for room service
+      if (!restaurant_id) {
+        const hotelRestaurant = await db('restaurants')
+          .select('id')
+          .where('is_active', true)
+          .first();
+
+        if (!hotelRestaurant) {
+          return res.status(404).json({
+            success: false,
+            error: {
+              code: 'NO_RESTAURANT_AVAILABLE',
+              message: 'No active restaurant available for room service'
+            }
+          });
+        }
+
+        finalRestaurantId = hotelRestaurant.id;
+      }
+
+      // Set room_booking_id for the order
+      room_booking_id = roomBooking.id;
     }
-    
-    // Auto-determine restaurant_id from table if not provided
-    const finalRestaurantId = restaurant_id || table.restaurant_id;
     
     // Auto-determine target kitchen based on order type and restaurant
     let finalTargetKitchenId = target_kitchen_id;
@@ -238,7 +340,7 @@ const createOrder = async (req, res) => {
           orderId,
           orderNumber,
           tableId: table_id,
-          tableNumber: table.table_name,
+          tableNumber: table?.table_name || 'Takeaway',
           kitchenTypes: [order_type],
           waiterId: userRole === 'waiter' ? userId : null
         });
@@ -246,7 +348,7 @@ const createOrder = async (req, res) => {
           orderId,
           orderNumber,
           tableId: table_id,
-          tableNumber: table.table_name,
+          tableNumber: table?.table_name || 'Takeaway',
           kitchenTypes: [order_type],
           waiterId: userRole === 'waiter' ? userId : null,
           customerInfo: {
@@ -301,12 +403,16 @@ const getOrders = async (req, res) => {
         'o.*',
         'rt.table_number',
         'rt.location as table_location',
+        'r.room_number',
+        'rb.guest_info',
         'u.first_name',
         'u.last_name',
         'w.first_name as waiter_first_name',
         'w.last_name as waiter_last_name'
       )
-      .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('room_bookings as rb', 'o.room_booking_id', 'rb.id')
+      .leftJoin('rooms as r', 'rb.room_id', 'r.id')
       .join('users as u', 'o.user_id', 'u.id')
       .leftJoin('users as w', 'o.waiter_id', 'w.id')
       .orderBy('o.placed_at', 'desc');
@@ -1465,9 +1571,15 @@ const getOrderDetails = async (orderId) => {
       'u.email',
       'u.phone',
       'w.first_name as waiter_first_name',
-      'w.last_name as waiter_last_name'
+      'w.last_name as waiter_last_name',
+      'rb.id as room_booking_id',
+      'r.room_number',
+      'r.floor as room_floor',
+      'rb.guest_info'
     )
-    .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+    .leftJoin('restaurant_tables as rt', 'o.table_id', 'rt.id')
+    .leftJoin('room_bookings as rb', 'o.room_booking_id', 'rb.id')
+    .leftJoin('rooms as r', 'rb.room_id', 'r.id')
     .join('users as u', 'o.user_id', 'u.id')
     .leftJoin('users as w', 'o.waiter_id', 'w.id')
     .where('o.id', orderId)
@@ -1528,6 +1640,8 @@ const getKitchenOrders = async (req, res) => {
         'o.*',
         'rt.table_number',
         'rt.location as table_location',
+        'rm.room_number',
+        'rb.guest_info',
         'u.first_name',
         'u.last_name',
         'w.first_name as waiter_first_name',
@@ -1535,7 +1649,9 @@ const getKitchenOrders = async (req, res) => {
         'r.name as restaurant_name',
         'tk.name as kitchen_name'
       )
-      .join('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('room_bookings as rb', 'o.room_booking_id', 'rb.id')
+      .leftJoin('rooms as rm', 'rb.room_id', 'rm.id')
       .join('users as u', 'o.user_id', 'u.id')
       .leftJoin('users as w', 'o.waiter_id', 'w.id')
       .leftJoin('restaurants as r', 'o.restaurant_id', 'r.id')

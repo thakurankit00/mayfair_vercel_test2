@@ -960,7 +960,28 @@ const OrdersTab = ({ orders, userRole, selectedRestaurant, restaurants,onPlaceOr
                 
                 <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                   <div>
-                    <span className="font-medium">Table:</span> {order.table_number || 'Room Service'}
+                    <span className="font-medium">
+                      {order.room_number ? 'Room:' : 'Table:'}
+                    </span>
+                    {order.room_number ? (
+                      <span>
+                        Room {order.room_number}
+                        {order.guest_info && (() => {
+                          try {
+                            const guestInfo = typeof order.guest_info === 'string'
+                              ? JSON.parse(order.guest_info)
+                              : order.guest_info;
+                            return guestInfo?.first_name
+                              ? ` - ${guestInfo.first_name} ${guestInfo.last_name || ''}`.trim()
+                              : '';
+                          } catch (e) {
+                            return '';
+                          }
+                        })()}
+                      </span>
+                    ) : (
+                      order.table_number || 'Walk-in'
+                    )}
                   </div>
                   <div>
                     <span className="font-medium">Total:</span> ₹{order.total_amount}

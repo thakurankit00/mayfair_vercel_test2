@@ -7,7 +7,7 @@ import {
   restaurantMenuApi,
   restaurantOrderApi
 } from '../../services/restaurantApi';
-import { roomApi } from '../../services/roomApi';
+import { roomApi } from '../../services/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import BillModal from '../payment/BillModal';
 import PaymentModal from '../payment/PaymentModal';
@@ -1301,9 +1301,24 @@ const ActiveOrdersTab = ({
                 <div>
                   <span className="font-medium">
                     {order.order_type === 'room-service' ? 'Room:' : 'Table:'}
-                  </span> 
-                  {order.order_type === 'room-service' 
-                    ? `${order.room_number} (${order.guest_name})`
+                  </span>
+                  {order.order_type === 'room-service'
+                    ? (() => {
+                        let guestName = 'Guest';
+                        if (order.guest_info) {
+                          try {
+                            const guestInfo = typeof order.guest_info === 'string'
+                              ? JSON.parse(order.guest_info)
+                              : order.guest_info;
+                            guestName = guestInfo?.first_name
+                              ? `${guestInfo.first_name} ${guestInfo.last_name || ''}`.trim()
+                              : 'Guest';
+                          } catch (e) {
+                            guestName = 'Guest';
+                          }
+                        }
+                        return `${order.room_number} (${guestName})`;
+                      })()
                     : order.table_number
                   }
                 </div>

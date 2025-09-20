@@ -8,19 +8,38 @@ const { v4: uuidv4 } = require('uuid');
 // Create a new room booking
 const createBooking = async (req, res, next) => {
   const trx = await transaction.start(RoomBooking.knex());
-  
+
   try {
     const {
       room_type_id,
       check_in_date,
       check_out_date,
-      adults,
-      children = 0,
+      adults: adultsRaw,
+      children: childrenRaw = 0,
       special_requests,
       guest_info
     } = req.body;
 
     const user_id = req.user.id;
+
+    // Convert adults and children to numbers to prevent string concatenation issues
+    const adults = parseInt(adultsRaw, 10);
+    const children = parseInt(childrenRaw, 10);
+
+    // Validate numeric conversion
+    if (isNaN(adults) || adults < 1) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Adults count must be a valid number greater than 0' }
+      });
+    }
+
+    if (isNaN(children) || children < 0) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Children count must be a valid number greater than or equal to 0' }
+      });
+    }
 
     // Validate dates
     const checkIn = new Date(check_in_date);
@@ -99,9 +118,13 @@ const createBooking = async (req, res, next) => {
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
     const total_amount = nights * roomType.base_price;
 
+    // Generate booking reference
+    const bookingReference = `BK${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+
     // Create booking
     const bookingData = {
       id: uuidv4(),
+      booking_reference: bookingReference,
       room_id: selectedRoom.id,
       user_id: user_id,
       check_in_date,
@@ -110,18 +133,18 @@ const createBooking = async (req, res, next) => {
       children,
       total_amount,
       status: 'pending',
-      platform: 'direct',
+      platform: null, // NULL for direct bookings
       special_requests: special_requests || null,
-      guest_info: guest_info || null
+      guest_info: guest_info ? JSON.stringify(guest_info) : null
     };
 
     const booking = await RoomBooking.query(trx).insert(bookingData);
 
     // Update room status to occupied when booking is confirmed
     await trx('rooms')
-      .update({ 
-        status: 'occupied', 
-        updated_at: new Date() 
+      .update({
+        status: 'occupied',
+        updated_at: new Date().toISOString()
       })
       .where('id', selectedRoom.id);
 
@@ -142,8 +165,21 @@ const createBooking = async (req, res, next) => {
 
   } catch (error) {
     await trx.rollback();
-    console.error('Booking creation error:', error);
-    next(error);
+    console.error('❌ [BOOKING] Booking creation error: - bookingController.js:183', error);
+    console.error('❌ [BOOKING] Error details: - bookingController.js:184', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+
+    // Return a more specific error response
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'BOOKING_CREATION_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to create booking'
+      }
+    });
   }
 };
 
@@ -265,10 +301,10 @@ const getBookingById = async (req, res, next) => {
 // Update booking status (staff only)
 const updateBookingStatus = async (req, res, next) => {
   const trx = await transaction.start(RoomBooking.knex());
-  
+
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status } = req.body;
 
     const booking = await RoomBooking.query(trx).findById(id);
 
@@ -287,12 +323,11 @@ const updateBookingStatus = async (req, res, next) => {
       });
     }
 
-    // Update booking
+    // Update booking (only update status and updated_at, notes are not stored in this table)
     await RoomBooking.query(trx)
-      .patch({ 
-        status, 
-        notes: notes || booking.notes,
-        updated_at: new Date()
+      .patch({
+        status,
+        updated_at: new Date().toISOString()
       })
       .where('id', id);
 
@@ -307,7 +342,7 @@ const updateBookingStatus = async (req, res, next) => {
     }
 
     await trx('rooms')
-      .update({ status: roomStatus, updated_at: new Date() })
+      .update({ status: roomStatus, updated_at: new Date().toISOString() })
       .where('id', booking.room_id);
 
     await trx.commit();
@@ -325,7 +360,20 @@ const updateBookingStatus = async (req, res, next) => {
 
   } catch (error) {
     await trx.rollback();
-    next(error);
+    console.error('❌ [BOOKING] Booking status update error: - bookingController.js:378', error);
+    console.error('❌ [BOOKING] Error details: - bookingController.js:379', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'BOOKING_UPDATE_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to update booking status'
+      }
+    });
   }
 };
 
@@ -520,7 +568,7 @@ const getBookingCalendar = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.error('Calendar booking fetch error:', error);
+    console.error('Calendar booking fetch error: - bookingController.js:586', error);
     next(error);
   }
 };

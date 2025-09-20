@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { restaurantMenuApi, restaurantTableApi, restaurantOrderApi } from '../../services/restaurantApi';
+import { roomApi } from '../../services/api';
 
 const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, userRole, existingOrder }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
   const [tables, setTables] = useState([]);
+  const [occupiedRooms, setOccupiedRooms] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [orderForm, setOrderForm] = useState({
     order_type: 'dine_in',
     table_id: '',
+    room_booking_id: '',
     room_number: '',
     customer_name: '',
     customer_phone: '',
@@ -23,6 +26,7 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
       setOrderForm({
         order_type: 'dine_in',
         table_id: existingOrder.tableId || '',
+        room_booking_id: '',
         room_number: '',
         customer_name: `${existingOrder.first_name || ''} ${existingOrder.last_name || ''}`.trim(),
         customer_phone: existingOrder.phone || '',
@@ -49,6 +53,23 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
     };
     loadData();
   }, [selectedRestaurant]);
+
+  // Load occupied rooms when room service is selected
+  useEffect(() => {
+    if (orderForm.order_type === 'room_service') {
+      loadOccupiedRooms();
+    }
+  }, [orderForm.order_type]);
+
+  const loadOccupiedRooms = async () => {
+    try {
+      const roomsData = await roomApi.getOccupiedRooms();
+      setOccupiedRooms(roomsData.rooms || []);
+    } catch (err) {
+      setError('Failed to load occupied rooms');
+      console.error('Load occupied rooms error:', err);
+    }
+  };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -129,8 +150,8 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
           throw new Error('Please select a table for dine-in orders');
         }
 
-        if (orderForm.order_type === 'room_service' && !orderForm.room_number) {
-          throw new Error('Please enter a room number for room service');
+        if (orderForm.order_type === 'room_service' && !orderForm.room_booking_id) {
+          throw new Error('Please select a room for room service');
         }
 
         if (!orderForm.customer_name.trim()) {
@@ -150,6 +171,11 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
           total_amount: calculateTotal(),
           estimated_time: Math.max(...selectedItems.map(item => item.preparation_time || 0))
         };
+
+        // Remove table_id for takeaway orders
+        if (orderForm.order_type === 'takeaway') {
+          delete orderData.table_id;
+        }
 
         // Create the order
         await restaurantOrderApi.createOrder(orderData);
@@ -314,21 +340,38 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                   </div>
                 )}
 
-                {/* Room Number (for room service) */}
+                {/* Room Selection (for room service) */}
                 {orderForm.order_type === 'room_service' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Room Number *
+                      Room *
                     </label>
-                    <input
-                      type="text"
-                      name="room_number"
-                      value={orderForm.room_number}
-                      onChange={handleFormChange}
+                    <select
+                      name="room_booking_id"
+                      value={orderForm.room_booking_id}
+                      onChange={(e) => {
+                        const selectedRoom = occupiedRooms.find(room => room.id === e.target.value);
+                        setOrderForm(prev => ({
+                          ...prev,
+                          room_booking_id: e.target.value,
+                          room_number: selectedRoom?.room_number || '',
+                          customer_name: selectedRoom ? `${selectedRoom.guest_first_name} ${selectedRoom.guest_last_name}` : '',
+                          customer_phone: selectedRoom?.guest_phone || ''
+                        }));
+                      }}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., 101, A-205"
                       required
-                    />
+                    >
+                      <option value="">Select Room</option>
+                      {occupiedRooms.map(room => (
+                        <option key={room.id} value={room.id}>
+                          Room {room.room_number} - {room.guest_first_name} {room.guest_last_name}
+                        </option>
+                      ))}
+                    </select>
+                    {occupiedRooms.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">No occupied rooms available</p>
+                    )}
                   </div>
                 )}
 
