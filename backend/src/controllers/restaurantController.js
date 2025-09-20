@@ -74,6 +74,7 @@ const updateMenuCategory = async (req, res) => {
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const Restaurant = require('../models/Restaurant');
+const { getTableBookingStatus } = require('../utils/tableStatus');
 
 /**
  * Restaurant Table Management Controller
@@ -105,7 +106,7 @@ const getRestaurants = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get restaurants error:', error);
+    console.error('Get restaurants error: - restaurantController.js:109', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -117,42 +118,113 @@ const getRestaurants = async (req, res) => {
 };
 
 /**
- * Get restaurant tables by restaurant
+ * Get restaurant tables by restaurant with booking status
  * GET /api/v1/restaurants/:restaurantId/tables
  */
 const getTables = async (req, res) => {
   try {
     const { restaurantId } = req.params;
     const { location } = req.query;
-    
+
     let query = db('restaurant_tables')
-      .select('restaurant_tables.*', 'restaurants.name as restaurant_name')
-      .join('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
+      .select(
+        'restaurant_tables.*',
+        'restaurants.name as restaurant_name',
+        db.raw(`
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.table_id = restaurant_tables.id
+              AND o.status IN ('pending', 'preparing', 'ready')
+            ) THEN 'occupied'
+            ELSE 'available'
+          END as status
+        `),
+        db.raw(`
+          CONCAT('Table ', restaurant_tables.table_number) as table_name
+        `)
+      )
+      .leftJoin('restaurants', 'restaurant_tables.restaurant_id', 'restaurants.id')
       .where('restaurant_tables.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('restaurant_tables.restaurant_id');
+      })
       .orderBy(['restaurant_tables.location', 'restaurant_tables.table_number']);
-    
+
     if (restaurantId && restaurantId !== 'all') {
       query = query.where('restaurant_tables.restaurant_id', restaurantId);
     }
-    
+
     if (location) {
       query = query.where('restaurant_tables.location', location);
     }
-    
+
     const tables = await query;
+    
+    // Add comprehensive status for each table (reservations + orders)
+    const today = new Date().toISOString().split('T')[0];
+    const tablesWithStatus = await Promise.all(
+      tables.map(async (table) => {
+        // Check if table has confirmed or seated reservation today
+        const reservation = await db('table_reservations')
+          .where('table_id', table.id)
+          .where('reservation_date', today)
+          .whereIn('status', ['confirmed', 'seated'])
+          .first();
+
+        // Check if table has active orders
+        const activeOrder = await db('orders')
+          .where('table_id', table.id)
+          .whereIn('status', ['pending', 'preparing', 'ready'])
+          .first();
+
+        // Determine unified status
+        let unifiedStatus = 'available';
+        let reservationInfo = null;
+
+        if (reservation) {
+          reservationInfo = {
+            id: reservation.id,
+            reservation_reference: reservation.reservation_reference,
+            reservation_time: reservation.reservation_time,
+            party_size: reservation.party_size,
+            status: reservation.status,
+            special_requests: reservation.special_requests
+          };
+
+          if (reservation.status === 'seated' || activeOrder) {
+            unifiedStatus = 'occupied'; // Customer is dining
+          } else if (reservation.status === 'confirmed') {
+            unifiedStatus = 'reserved'; // Table is reserved but customer hasn't arrived
+          }
+        } else if (activeOrder) {
+          unifiedStatus = 'occupied'; // Walk-in customer dining
+        }
+
+        return {
+          ...table,
+          // Legacy fields for backward compatibility
+          booking_status: reservation ? 'booked' : 'available',
+          // New unified status system
+          unified_status: unifiedStatus,
+          reservation_info: reservationInfo,
+          has_active_orders: !!activeOrder,
+          order_count: activeOrder ? 1 : 0
+        };
+      })
+    );
     
     return res.status(200).json({
       success: true,
       data: {
-        tables,
-        totalTables: tables.length,
-        locations: [...new Set(tables.map(t => t.location))],
-        restaurants: [...new Set(tables.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
+        tables: tablesWithStatus,
+        totalTables: tablesWithStatus.length,
+        locations: [...new Set(tablesWithStatus.map(t => t.location))],
+        restaurants: [...new Set(tablesWithStatus.map(t => ({ id: t.restaurant_id, name: t.restaurant_name })))]
       }
     });
   } catch (error) {
-    console.error('Get tables error: - restaurantController.js:109', error);
+    console.error('Get tables error: - restaurantController.js:190', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -236,13 +308,29 @@ const createTable = async (req, res) => {
       })
       .returning('*');
     
+    // Add booking status (new tables are always available)
+    const tableWithStatus = {
+      ...newTable[0],
+      booking_status: 'available'
+    };
+    
+    // Emit socket event for new table creation
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('table_created', { 
+        table: tableWithStatus,
+        restaurant_id: restaurantId,
+        timestamp: new Date()
+      });
+    }
+    
     return res.status(201).json({
       success: true,
-      data: { table: newTable[0] },
+      data: { table: tableWithStatus },
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
-    console.error('Create table error: - restaurantController.js:184', error);
+    console.error('Create table error: - restaurantController.js:296', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -306,13 +394,26 @@ const updateTable = async (req, res) => {
       .update(updateData)
       .returning('*');
     
+    // Add current booking status
+    const today = new Date().toISOString().split('T')[0];
+    const reservation = await db('table_reservations')
+      .where('table_id', id)
+      .where('reservation_date', today)
+      .whereIn('status', ['confirmed', 'seated'])
+      .first();
+    
+    const tableWithStatus = {
+      ...updatedTable[0],
+      booking_status: reservation ? 'booked' : 'available'
+    };
+    
     return res.status(200).json({
       success: true,
-      data: { table: updatedTable[0] },
+      data: { table: tableWithStatus },
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
-    console.error('Update table error: - restaurantController.js:254', error);
+    console.error('Update table error: - restaurantController.js:379', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -369,12 +470,18 @@ const deleteTable = async (req, res) => {
       .where('id', id)
       .update({ is_active: false, updated_at: new Date() });
     
+    // Emit socket event for table deletion
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('table_deleted', { table_id: id });
+    }
+    
     return res.status(200).json({
       success: true,
       message: 'Restaurant table deleted successfully'
     });
   } catch (error) {
-    console.error('Delete table error: - restaurantController.js:316', error);
+    console.error('Delete table error: - restaurantController.js:447', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -400,9 +507,11 @@ const getMenuCategories = async (req, res) => {
     
     let query = db('menu_categories')
       .select('menu_categories.*', 'restaurants.name as restaurant_name')
-      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .leftJoin('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
       .where('menu_categories.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('menu_categories.restaurant_id');
+      })
       .orderBy('menu_categories.display_order', 'asc');
     
     if (restaurantId && restaurantId !== 'all') {
@@ -420,7 +529,7 @@ const getMenuCategories = async (req, res) => {
       data: { categories }
     });
   } catch (error) {
-    console.error('Get menu categories error: - restaurantController.js:355', error);
+    console.error('Get menu categories error: - restaurantController.js:493', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -493,7 +602,7 @@ const createMenuCategory = async (req, res) => {
       message: 'Menu category created successfully'
     });
   } catch (error) {
-    console.error('Create menu category error: - restaurantController.js:414', error);
+    console.error('Create menu category error: - restaurantController.js:566', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -515,9 +624,11 @@ const getMenu = async (req, res) => {
     
     let categoryQuery = db('menu_categories')
       .select('menu_categories.*', 'restaurants.name as restaurant_name')
-      .join('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
+      .leftJoin('restaurants', 'menu_categories.restaurant_id', 'restaurants.id')
       .where('menu_categories.is_active', true)
-      .where('restaurants.is_active', true)
+      .where(function() {
+        this.where('restaurants.is_active', true).orWhereNull('menu_categories.restaurant_id');
+      })
       .orderBy('menu_categories.display_order', 'asc');
     
     if (restaurantId && restaurantId !== 'all') {
@@ -559,7 +670,7 @@ const getMenu = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get menu error: - restaurantController.js:473', error);
+    console.error('Get menu error: - restaurantController.js:632', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -647,7 +758,7 @@ const createMenuItem = async (req, res) => {
       message: 'Menu item created successfully'
     });
   } catch (error) {
-    console.error('Create menu item error: - restaurantController.js:561', error);
+    console.error('Create menu item error: - restaurantController.js:720', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -710,7 +821,7 @@ const updateMenuItem = async (req, res) => {
       message: 'Menu item updated successfully'
     });
   } catch (error) {
-    console.error('Update menu item error: - restaurantController.js:624', error);
+    console.error('Update menu item error: - restaurantController.js:783', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -757,12 +868,76 @@ const deleteMenuItem = async (req, res) => {
       message: 'Menu item deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu item error: - restaurantController.js:671', error);
+    console.error('Delete menu item error: - restaurantController.js:830', error);
     return res.status(500).json({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
         message: error.message || 'Failed to delete menu item'
+      }
+    });
+  }
+};
+
+/**
+ * Delete menu category (Admin/Manager)
+ * DELETE /api/v1/restaurant/menu/categories/:id
+ */
+const deleteMenuCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const existingCategory = await db('menu_categories')
+      .where('id', id)
+      .where('is_active', true)
+      .first();
+    
+    if (!existingCategory) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CATEGORY_NOT_FOUND',
+          message: 'Menu category not found'
+        }
+      });
+    }
+    
+    // Check if category has active menu items
+    const activeItems = await db('menu_items')
+      .where('category_id', id)
+      .where('is_available', true)
+      .count('id as count')
+      .first();
+    
+    if (parseInt(activeItems.count) > 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'CANNOT_DELETE_CATEGORY',
+          message: 'Cannot delete category with active menu items'
+        }
+      });
+    }
+    
+    // Soft delete
+    await db('menu_categories')
+      .where('id', id)
+      .update({ 
+        is_active: false, 
+        updated_at: new Date() 
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Menu category deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete menu category error: - restaurantController.js:894', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message || 'Failed to delete menu category'
       }
     });
   }
@@ -782,6 +957,7 @@ module.exports = {
   getMenuCategories,
   createMenuCategory,
   updateMenuCategory,
+  deleteMenuCategory,
   getMenu,
   createMenuItem,
   updateMenuItem,

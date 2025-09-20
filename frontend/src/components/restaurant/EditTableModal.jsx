@@ -113,7 +113,7 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
 
   return (
     <div className="relative inline-block text-left">
-      {/* 3-dot menu */}
+      {/* Admin/Manager 3-dot menu */}
       <button
         onClick={() => setShowMenu(!showMenu)}
         className="text-gray-400 hover:text-gray-600 focus:outline-none"

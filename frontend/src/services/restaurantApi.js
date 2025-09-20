@@ -260,7 +260,11 @@ export const restaurantMenuApi = {
 
   // Create menu category
   createCategory: async (categoryData) => {
-    const response = await api.post('/restaurant/menu/categories', categoryData);
+    const { restaurant_id, ...data } = categoryData;
+    if (!restaurant_id) {
+      throw new Error('Restaurant ID is required to create a category');
+    }
+    const response = await api.post(`/restaurant/restaurants/${restaurant_id}/menu/categories`, data);
     return response.data.data;
   },
 
@@ -331,6 +335,12 @@ export const restaurantReservationApi = {
     return response.data.data;
   },
 
+  // Get single reservation
+  getReservation: async (id) => {
+    const response = await api.get(`/restaurant/reservations/${id}`);
+    return response.data.data;
+  },
+
   // Update reservation
   updateReservation: async (id, updateData) => {
     const response = await api.put(`/restaurant/reservations/${id}`, updateData);
@@ -376,8 +386,42 @@ export const restaurantOrderApi = {
   },
 
   // Update order item status
-  updateOrderItemStatus: async (orderId, itemId, status) => {
-    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}/status`, { status });
+  updateOrderItemStatus: async (orderId, itemId, statusData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}/status`, statusData);
+    return response.data.data;
+  },
+
+  // Update order details
+  updateOrderDetails: async (orderId, orderData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}`, orderData);
+    return response.data.data;
+  },
+
+  // Update order item
+  updateOrderItem: async (orderId, itemId, itemData) => {
+    const response = await api.put(`/restaurant/orders/${orderId}/items/${itemId}`, itemData);
+    return response.data.data;
+  },
+
+  // Delete order item
+  deleteOrderItem: async (orderId, itemId) => {
+    const response = await api.delete(`/restaurant/orders/${orderId}/items/${itemId}`);
+    return response.data;
+  },
+
+  // Cancel order item
+  cancelOrderItem: async (orderId, itemId, cancellation_reason) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/items/${itemId}/cancel`, {
+      cancellation_reason
+    });
+    return response.data.data;
+  },
+
+  // Get kitchen dashboard data
+  getKitchenDashboard: async (restaurantId = null) => {
+    const params = {};
+    if (restaurantId) params.restaurant_id = restaurantId;
+    const response = await api.get('/restaurant/kitchen/dashboard', { params });
     return response.data.data;
   },
 
@@ -387,9 +431,36 @@ export const restaurantOrderApi = {
     return response.data.data;
   },
 
+  // Alias for addOrderItems
+  addItemsToOrder: async (id, itemData) => {
+    const response = await api.post(`/restaurant/orders/${id}/items`, itemData);
+    return response.data.data;
+  },
+
   // Generate bill for order
   generateBill: async (orderId) => {
     const response = await api.post(`/restaurant/orders/${orderId}/bill`);
     return response.data.data;
+  },
+
+  // Get existing bill for order
+  getBill: async (orderId) => {
+    const response = await api.get(`/restaurant/orders/${orderId}/bill`);
+    return response.data.data;
+  },
+
+  // Request payment for order
+  requestPayment: async (orderId) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/request-payment`);
+    return response.data.data;
+  },
+
+  // Complete order
+  completeOrder: async (orderId) => {
+    const response = await api.post(`/restaurant/orders/${orderId}/complete`);
+    return response.data.data;
   }
 };
+
+// Export order API with alias for easier imports
+export const orderApi = restaurantOrderApi;

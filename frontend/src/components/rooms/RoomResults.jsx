@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { roomApi } from '../../services/api';
+import apiServices from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 const RoomResults = ({ rooms, searchCriteria, onNewSearch }) => {
@@ -122,18 +122,26 @@ const RoomResults = ({ rooms, searchCriteria, onNewSearch }) => {
           <div key={room.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
             {/* Room Images */}
             <div className="relative h-48 bg-gray-200">
-              {room.images && room.images.length > 0 ? (
+              {room.primary_image_url ? (
                 <img
-                  src={room.images[0]}
+                  src={room.primary_image_url}
                   alt={room.name}
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="flex items-center justify-center h-full bg-gray-100">
-                  <div className="text-gray-400 text-6xl">🏨</div>
+                <div className="flex flex-col items-center justify-center h-full bg-gray-100">
+                  <div className="text-gray-400 text-4xl mb-2">🏨</div>
+                  <div className="text-gray-500 text-sm">No image available</div>
                 </div>
               )}
-              
+
+              {/* Image count badge */}
+              {room.image_count > 0 && (
+                <div className="absolute top-3 left-3 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
+                  📷 {room.image_count}
+                </div>
+              )}
+
               {/* Available count badge */}
               <div className="absolute top-3 right-3 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
                 {room.availableCount} available
@@ -359,7 +367,7 @@ const BookingModal = ({ room, searchCriteria, onClose, onBookingSuccess }) => {
         guest_info: formData.guest_info
       };
 
-      const result = await roomApi.createBooking(bookingData);
+      const result = await apiServices.rooms.createBooking(bookingData);
       onBookingSuccess(result.booking);
     } catch (error) {
       console.error('Booking error:', error);

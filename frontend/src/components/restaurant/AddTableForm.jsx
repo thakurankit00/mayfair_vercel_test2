@@ -76,6 +76,11 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
           newTable = response;
         }
       }
+      
+      // Ensure booking_status is set for new tables
+      if (newTable && !newTable.booking_status) {
+        newTable.booking_status = 'available';
+      }
 
       if (newTable && newTable.id) {
         console.log("Table created successfully:", newTable);

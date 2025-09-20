@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { restaurantMenuApi, restaurantTableApi, restaurantOrderApi } from '../../services/restaurantApi';
+import { roomApi } from '../../services/api';
 
-const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, userRole }) => {
+const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, userRole, existingOrder }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState({ menu: [], totalCategories: 0, totalItems: 0 });
   const [tables, setTables] = useState([]);
+  const [occupiedRooms, setOccupiedRooms] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [orderForm, setOrderForm] = useState({
     order_type: 'dine_in',
     table_id: '',
+    room_booking_id: '',
     room_number: '',
     customer_name: '',
     customer_phone: '',
@@ -17,6 +20,21 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
     payment_method: 'cash'
   });
 
+  // Initialize with existing order data if provided
+  useEffect(() => {
+    if (existingOrder) {
+      setOrderForm({
+        order_type: 'dine_in',
+        table_id: existingOrder.tableId || '',
+        room_booking_id: '',
+        room_number: '',
+        customer_name: `${existingOrder.first_name || ''} ${existingOrder.last_name || ''}`.trim(),
+        customer_phone: existingOrder.phone || '',
+        special_instructions: existingOrder.special_instructions || '',
+        payment_method: 'cash'
+      });
+    }
+  }, [existingOrder]);
   // Load menu and tables on mount
   useEffect(() => {
     const loadData = async () => {
@@ -35,6 +53,23 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
     };
     loadData();
   }, [selectedRestaurant]);
+
+  // Load occupied rooms when room service is selected
+  useEffect(() => {
+    if (orderForm.order_type === 'room_service') {
+      loadOccupiedRooms();
+    }
+  }, [orderForm.order_type]);
+
+  const loadOccupiedRooms = async () => {
+    try {
+      const roomsData = await roomApi.getOccupiedRooms();
+      setOccupiedRooms(roomsData.rooms || []);
+    } catch (err) {
+      setError('Failed to load occupied rooms');
+      console.error('Load occupied rooms error:', err);
+    }
+  };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -94,38 +129,61 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
         throw new Error('Please add at least one item to the order');
       }
 
-      if (orderForm.order_type === 'dine_in' && !orderForm.table_id) {
-        throw new Error('Please select a table for dine-in orders');
-      }
+      if (existingOrder) {
+        // Adding items to existing order - skip form validation
+        const orderData = {
+          items: selectedItems.map(item => ({
+            menu_item_id: item.id,
+            quantity: item.quantity,
+            price: item.price,
+            special_instructions: ''
+          }))
+        };
 
-      if (orderForm.order_type === 'room_service' && !orderForm.room_number) {
-        throw new Error('Please enter a room number for room service');
-      }
+        // Call onSave with the new items data
+        if (onSave) {
+          await onSave(orderData);
+        }
+      } else {
+        // Creating new order
+        if (orderForm.order_type === 'dine_in' && !orderForm.table_id) {
+          throw new Error('Please select a table for dine-in orders');
+        }
 
-      if (!orderForm.customer_name.trim()) {
-        throw new Error('Please enter customer name');
-      }
+        if (orderForm.order_type === 'room_service' && !orderForm.room_booking_id) {
+          throw new Error('Please select a room for room service');
+        }
 
-      // Prepare order data
-      const orderData = {
-        ...orderForm,
-        restaurant_id: selectedRestaurant,
-        items: selectedItems.map(item => ({
-          menu_item_id: item.id,
-          quantity: item.quantity,
-          price: item.price,
-          special_instructions: ''
-        })),
-        total_amount: calculateTotal(),
-        estimated_time: Math.max(...selectedItems.map(item => item.preparation_time || 0))
-      };
+        if (!orderForm.customer_name.trim()) {
+          throw new Error('Please enter customer name');
+        }
 
-      // Create the order
-      await restaurantOrderApi.createOrder(orderData);
+        // Prepare order data
+        const orderData = {
+          ...orderForm,
+          restaurant_id: selectedRestaurant,
+          items: selectedItems.map(item => ({
+            menu_item_id: item.id,
+            quantity: item.quantity,
+            price: item.price,
+            special_instructions: ''
+          })),
+          total_amount: calculateTotal(),
+          estimated_time: Math.max(...selectedItems.map(item => item.preparation_time || 0))
+        };
 
-      // Call onSave to refresh orders list
-      if (onSave) {
-        await onSave();
+        // Remove table_id for takeaway orders
+        if (orderForm.order_type === 'takeaway') {
+          delete orderData.table_id;
+        }
+
+        // Create the order
+        await restaurantOrderApi.createOrder(orderData);
+
+        // Call onSave to refresh orders list
+        if (onSave) {
+          await onSave();
+        }
       }
 
       onClose();
@@ -143,7 +201,9 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
       <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl p-6 m-4 max-h-screen overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Place New Order</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {existingOrder ? `Add Items to Order #${existingOrder.order_number || existingOrder.rounds?.[0]?.orderNumber}` : 'Place New Order'}
+            </h2>
             {selectedRestaurantData && (
               <p className="text-sm text-gray-600 mt-1">
                 {selectedRestaurantData.name} ({selectedRestaurantData.restaurant_type})
@@ -234,7 +294,8 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
 
           {/* Order Summary & Details */}
           <div className="space-y-6">
-            {/* Order Details Form */}
+            {/* Order Details Form - Only show for new orders */}
+            {!existingOrder && (
             <div className="border rounded-lg p-4">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Order Details</h3>
               <div className="space-y-4">
@@ -279,21 +340,38 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                   </div>
                 )}
 
-                {/* Room Number (for room service) */}
+                {/* Room Selection (for room service) */}
                 {orderForm.order_type === 'room_service' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Room Number *
+                      Room *
                     </label>
-                    <input
-                      type="text"
-                      name="room_number"
-                      value={orderForm.room_number}
-                      onChange={handleFormChange}
+                    <select
+                      name="room_booking_id"
+                      value={orderForm.room_booking_id}
+                      onChange={(e) => {
+                        const selectedRoom = occupiedRooms.find(room => room.id === e.target.value);
+                        setOrderForm(prev => ({
+                          ...prev,
+                          room_booking_id: e.target.value,
+                          room_number: selectedRoom?.room_number || '',
+                          customer_name: selectedRoom ? `${selectedRoom.guest_first_name} ${selectedRoom.guest_last_name}` : '',
+                          customer_phone: selectedRoom?.guest_phone || ''
+                        }));
+                      }}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., 101, A-205"
                       required
-                    />
+                    >
+                      <option value="">Select Room</option>
+                      {occupiedRooms.map(room => (
+                        <option key={room.id} value={room.id}>
+                          Room {room.room_number} - {room.guest_first_name} {room.guest_last_name}
+                        </option>
+                      ))}
+                    </select>
+                    {occupiedRooms.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">No occupied rooms available</p>
+                    )}
                   </div>
                 )}
 
@@ -360,10 +438,31 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                 </div>
               </div>
             </div>
+            )}
+
+            {/* Existing Order Items (if adding to existing order) */}
+            {existingOrder && existingOrder.rounds?.[0]?.items?.length > 0 && (
+              <div className="border rounded-lg p-4 mb-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Existing Order Items</h3>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {existingOrder.rounds[0].items.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-700">{item.item_name || item.name}</p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-gray-600">{item.quantity}x</span>
+                        <span className="font-medium">₹{parseFloat(item.total_price || item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Order Summary */}
             <div className="border rounded-lg p-4">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Order Summary</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">{existingOrder ? 'New Items to Add' : 'Order Summary'}</h3>
               <div className="space-y-3 max-h-40 overflow-y-auto">
                 {selectedItems.map((item) => (
                   <div key={item.id} className="flex items-center justify-between">
@@ -421,7 +520,7 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
                 className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
                 disabled={loading || selectedItems.length === 0}
               >
-                {loading ? 'Placing...' : 'Place Order'}
+                {loading ? (existingOrder ? 'Adding...' : 'Placing...') : (existingOrder ? 'Add Items' : 'Place Order')}
               </button>
             </div>
           </div>

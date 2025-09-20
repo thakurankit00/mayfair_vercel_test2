@@ -17,7 +17,7 @@ const errorHandler = (err, req, res, next) => {
   };
 
   // Mongoose validation error
-  if (err.name === 'ValidationError') {
+  if (err.name === 'ValidationError' && err.errors) {
     const errors = Object.values(err.errors).map(e => e.message);
     error = {
       success: false,

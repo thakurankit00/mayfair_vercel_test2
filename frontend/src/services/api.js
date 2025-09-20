@@ -39,7 +39,7 @@ api.interceptors.response.use(
     return response.data; // Return just the data part
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error: - api.js:42', error.response?.data || error.message);
     
     // Handle 401 errors by clearing auth data
     if (error.response?.status === 401) {
@@ -85,7 +85,7 @@ export const authApi = {
       await api.post('/auth/logout');
     } catch (error) {
       // Continue with logout even if API call fails
-      console.warn('Logout API call failed:', error.message);
+      console.warn('Logout API call failed: - api.js:88', error.message);
     } finally {
       // Always clear local storage
       localStorage.removeItem('token');
@@ -108,7 +108,7 @@ export const authApi = {
       try {
         return JSON.parse(userStr);
       } catch (error) {
-        console.error('Error parsing stored user data:', error);
+        console.error('Error parsing stored user data: - api.js:111', error);
         localStorage.removeItem('user');
         localStorage.removeItem('token');
         return null;
@@ -158,6 +158,27 @@ export const userApi = {
     const params = role ? { role } : {};
     const response = await api.get('/users', { params });
     return response.data;
+  },
+
+  // Admin user management functions
+  async createUser(userData) {
+    const response = await api.post('/users', userData);
+    return response.data;
+  },
+
+  async updateUser(userId, userData) {
+    const response = await api.put(`/users/${userId}`, userData);
+    return response.data;
+  },
+
+  async deactivateUser(userId) {
+    const response = await api.delete(`/users/${userId}`);
+    return response.data;
+  },
+
+  async activateUser(userId) {
+    const response = await api.patch(`/users/${userId}/activate`);
+    return response.data;
   }
 };
 
@@ -165,22 +186,32 @@ export const userApi = {
 export const roomApi = {
   async getRoomTypes() {
     const response = await api.get('/rooms/types');
-    return response.data.roomTypes;
+    console.log('🏨 [API] Room types response:', response);
+    // Backend returns array directly, map to include totalRooms for frontend compatibility
+    return response.map(roomType => ({
+      ...roomType,
+      totalRooms: parseInt(roomType.total_rooms) || 0
+    }));
   },
 
   async getRoomTypeById(id) {
     const response = await api.get(`/rooms/types/${id}`);
-    return response.data.roomType;
+    console.log('🏨 [API] Room type by ID response:', response);
+    // Map the response to include totalRooms property for frontend compatibility
+    return {
+      ...response,
+      totalRooms: parseInt(response.total_rooms) || 0
+    };
   },
 
   async createRoomType(roomTypeData) {
     const response = await api.post('/rooms/types', roomTypeData);
-    return response.data.roomType;
+    return response;
   },
 
   async updateRoomType(id, roomTypeData) {
     const response = await api.put(`/rooms/types/${id}`, roomTypeData);
-    return response.data.roomType;
+    return response;
   },
 
   async deleteRoomType(id) {
@@ -203,15 +234,81 @@ export const roomApi = {
       adults: parseInt(adults),
       children: parseInt(children)
     };
-    
+
+    console.log('🏨 [API] Checking room availability with params:', params);
     const response = await api.get('/rooms/availability', { params });
-    return response.data.availableRooms;
+    console.log('🏨 [API] Room availability response:', response);
+    // Since api interceptor returns response.data, the response is already the data
+    return response.availableRooms || [];
   },
 
   // Booking management
   async createBooking(bookingData) {
     const response = await api.post('/bookings', bookingData);
     return response.data;
+  },
+
+  // Image management methods
+  async uploadRoomImages(formData) {
+    try {
+      console.log('🖼️ [API] Uploading room images...');
+      console.log('🖼️ [API] FormData contents:', Array.from(formData.entries()));
+
+      // Don't set Content-Type header - let axios set it automatically with boundary
+      const response = await api.post('/rooms/images', formData);
+      console.log('🖼️ [API] Room images uploaded successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to upload room images:', error);
+      console.error('❌ [API] Error details:', error.response?.data);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to upload room images');
+    }
+  },
+
+  async getRoomImages(roomTypeId = null, roomId = null) {
+    try {
+      console.log('🖼️ [API] Fetching room images...');
+      const params = {};
+      if (roomTypeId) params.room_type_id = roomTypeId;
+      if (roomId) params.room_id = roomId;
+
+      const response = await api.get('/rooms/images', { params });
+      console.log('🖼️ [API] Room images fetched successfully:', response);
+
+      // Return the data structure expected by the frontend
+      // Since api interceptor returns response.data, check both structures
+      return {
+        images: response.images || response.data?.images || [],
+        total_count: response.total_count || response.data?.total_count || 0
+      };
+    } catch (error) {
+      console.error('❌ [API] Failed to fetch room images:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to fetch room images');
+    }
+  },
+
+  async updateRoomImage(imageId, updateData) {
+    try {
+      console.log('🖼️ [API] Updating room image...');
+      const response = await api.put(`/rooms/images/${imageId}`, updateData);
+      console.log('🖼️ [API] Room image updated successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to update room image:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to update room image');
+    }
+  },
+
+  async deleteRoomImage(imageId) {
+    try {
+      console.log('🖼️ [API] Deleting room image...');
+      const response = await api.delete(`/rooms/images/${imageId}`);
+      console.log('🖼️ [API] Room image deleted successfully:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [API] Failed to delete room image:', error);
+      throw new Error(error.response?.data?.error?.message || error.message || 'Failed to delete room image');
+    }
   },
 
   async getBookings(params = {}) {
@@ -239,6 +336,65 @@ export const roomApi = {
     return response.data;
   }
 };
+
+// Payment API
+export const paymentApi = {
+  // Create payment intent
+  createPaymentIntent: async (paymentData) => {
+    try {
+      const response = await api.post('/payments/create-intent', paymentData);
+      return response;
+    } catch (error) {
+      console.error('Create payment intent error: - api.js:272', error);
+      throw error;
+    }
+  },
+
+  // Get payment status
+  getPaymentStatus: async (paymentId) => {
+    try {
+      const response = await api.get(`/payments/${paymentId}/status`);
+      return response;
+    } catch (error) {
+      console.error('Get payment status error: - api.js:283', error);
+      throw error;
+    }
+  },
+
+  // Get payment history
+  getPaymentHistory: async (params = {}) => {
+    try {
+      const response = await api.get('/payments/history', { params });
+      return response;
+    } catch (error) {
+      console.error('Get payment history error: - api.js:294', error);
+      throw error;
+    }
+  },
+
+  // Verify payment
+  verifyPayment: async (paymentId) => {
+    try {
+      const response = await api.post(`/payments/${paymentId}/verify`);
+      return response;
+    } catch (error) {
+      console.error('Verify payment error: - api.js:305', error);
+      throw error;
+    }
+  },
+
+  // Get payment form URL
+  getPaymentForm: async (paymentId) => {
+    try {
+      const response = await api.get(`/payments/${paymentId}/form`);
+      return response;
+    } catch (error) {
+      console.error('Get payment form error: - api.js:316', error);
+      throw error;
+    }
+  }
+};
+
 
 
 // Restaurant API - now properly implemented
@@ -273,6 +429,9 @@ export const offersApi = {
   }
 };
 
+// Export the api instance for other services to use
+export { api };
+
 // Export all APIs
 const apiServices = {
   auth: authApi,
@@ -280,6 +439,7 @@ const apiServices = {
   users: userApi,
   rooms: roomApi,
   restaurant: restaurantApiService,
+  payments: paymentApi,
   offers: offersApi
 };
 

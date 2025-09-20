@@ -29,9 +29,16 @@ const {
   getOrders,
   getOrderById,
   updateOrderStatus,
+  updateOrderDetails,
   updateOrderItemStatus,
+  updateOrderItem,
+  deleteOrderItem,
+  cancelOrderItem,
   addOrderItems,
   generateBill,
+  getBill,
+  requestPayment,
+  completeOrder,
   // Kitchen management
   getKitchenOrders,
   acceptKitchenOrder,
@@ -87,8 +94,11 @@ router.get('/restaurants/:restaurantId/menu/categories', getMenuCategories);
 router.post('/restaurants/:restaurantId/menu/categories', authenticateToken, requireRole(['admin', 'manager']), createMenuCategory);
 
 // Update menu category (Admin/Manager)
-const { updateMenuCategory } = require('../controllers/restaurantController');
+const { updateMenuCategory, deleteMenuCategory } = require('../controllers/restaurantController');
 router.put('/menu/categories/:id', authenticateToken, requireRole(['admin', 'manager']), updateMenuCategory);
+
+// Delete menu category (Admin/Manager)
+router.delete('/menu/categories/:id', authenticateToken, requireRole(['admin', 'manager']), deleteMenuCategory);
 
 // Get menu with items (Public)
 router.get('/menu', getMenu);
@@ -115,6 +125,10 @@ router.post('/reservations', authenticateToken, createReservation);
 
 // Get reservations (Protected)
 router.get('/reservations', authenticateToken, getReservations);
+
+// Get single reservation (Protected)
+const { getReservation } = require('../controllers/reservationController');
+router.get('/reservations/:id', authenticateToken, getReservation);
 
 // Update reservation (Protected)
 router.put('/reservations/:id', authenticateToken, updateReservation);
@@ -207,14 +221,35 @@ router.get('/orders/:id', authenticateToken, getOrderById);
 // Update order status (Staff+)
 router.put('/orders/:id/status', authenticateToken, requireRole(['receptionist', 'waiter', 'chef', 'bartender', 'manager', 'admin']), updateOrderStatus);
 
+// Update order details (Waiter/Manager/Admin)
+router.put('/orders/:id', authenticateToken, requireRole(['waiter', 'manager', 'admin']), updateOrderDetails);
+
 // Update order item status (Chef/Bartender/Manager/Admin)
 router.put('/orders/:orderId/items/:itemId/status', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), updateOrderItemStatus);
+
+// Update order item details (Waiter/Manager/Admin)
+router.put('/orders/:orderId/items/:itemId', authenticateToken, requireRole(['waiter', 'manager', 'admin']), updateOrderItem);
+
+// Delete order item (Waiter/Manager/Admin)
+router.delete('/orders/:orderId/items/:itemId', authenticateToken, requireRole(['waiter', 'manager', 'admin']), deleteOrderItem);
+
+// Cancel order item (Chef/Bartender/Manager/Admin)
+router.post('/orders/:orderId/items/:itemId/cancel', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), cancelOrderItem);
 
 // Add items to existing order (Protected)
 router.post('/orders/:id/items', authenticateToken, addOrderItems);
 
 // Generate bill for order (Waiter+)
 router.post('/orders/:orderId/bill', authenticateToken, requireRole(['waiter', 'manager', 'admin']), generateBill);
+
+// Get existing bill for order (Waiter+)
+router.get('/orders/:orderId/bill', authenticateToken, requireRole(['waiter', 'manager', 'admin']), getBill);
+
+// Request payment for order (Waiter+)
+router.post('/orders/:orderId/request-payment', authenticateToken, requireRole(['waiter', 'manager', 'admin']), requestPayment);
+
+// Complete order (Waiter+)
+router.post('/orders/:orderId/complete', authenticateToken, requireRole(['waiter', 'manager', 'admin']), completeOrder);
 
 // ============================================================================
 // KITCHEN MANAGEMENT ROUTES
@@ -237,6 +272,111 @@ router.delete('/kitchens/:kitchenId/staff/:userId/:role', authenticateToken, req
 
 // Get kitchen orders (Kitchen Staff+)
 router.get('/kitchen/:kitchenId/orders', authenticateToken, getKitchenOrders);
+
+// General kitchen dashboard (Chef/Bartender+) - doesn't require specific kitchen ID
+router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'bartender', 'manager', 'admin']), async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const db = require('../config/database');
+
+    // Build query for orders that need kitchen attention
+    let query = db('orders as o')
+      .select(
+        'o.*',
+        'rt.table_number',
+        'rt.location as table_location',
+        'r.room_number',
+        'rb.guest_info',
+        'u.first_name',
+        'u.last_name',
+        'w.first_name as waiter_first_name',
+        'w.last_name as waiter_last_name'
+      )
+      .leftJoin('restaurant_tables as rt', 'o.table_id', 'rt.id')
+      .leftJoin('room_bookings as rb', 'o.room_booking_id', 'rb.id')
+      .leftJoin('rooms as r', 'rb.room_id', 'r.id')
+      .join('users as u', 'o.user_id', 'u.id')
+      .leftJoin('users as w', 'o.waiter_id', 'w.id')
+      .whereIn('o.status', ['pending', 'preparing'])
+      .orderBy('o.placed_at', 'desc');
+
+    // Filter by kitchen type based on user role
+    if (userRole === 'bartender') {
+      query = query.where('o.order_type', 'bar');
+    } else if (userRole === 'chef') {
+      query = query.whereIn('o.order_type', ['restaurant', 'room_service', 'dine_in']);
+    }
+
+    const orders = await query;
+
+    // Get order items for each order
+    const ordersWithItems = await Promise.all(
+      orders.map(async (order) => {
+        const items = await db('order_items as oi')
+          .select('oi.*', 'mi.name as item_name', 'mi.description', 'mc.name as category_name')
+          .join('menu_items as mi', 'oi.menu_item_id', 'mi.id')
+          .join('menu_categories as mc', 'mi.category_id', 'mc.id')
+          .where('oi.order_id', order.id)
+          .orderBy('oi.created_at', 'asc');
+
+        return {
+          ...order,
+          items,
+          orderNumber: order.order_number || `ORD-${order.id.slice(-8)}`,
+          tableNumber: order.table_number,
+          customerName: `${order.first_name} ${order.last_name}`,
+          waiterName: order.waiter_first_name ? `${order.waiter_first_name} ${order.waiter_last_name}` : 'N/A',
+          placedAt: order.placed_at,
+          orderType: order.order_type
+        };
+      })
+    );
+
+    // Calculate stats
+    const stats = {
+      totalPendingItems: 0,
+      totalAcceptedItems: 0,
+      totalPreparingItems: 0,
+      totalOrders: ordersWithItems.length
+    };
+
+    ordersWithItems.forEach(order => {
+      if (order.items) {
+        order.items.forEach(item => {
+          switch (item.status) {
+            case 'pending':
+              stats.totalPendingItems++;
+              break;
+            case 'accepted':
+              stats.totalAcceptedItems++;
+              break;
+            case 'preparing':
+              stats.totalPreparingItems++;
+              break;
+          }
+        });
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        orders: ordersWithItems,
+        stats
+      }
+    });
+    
+  } catch (error) {
+    console.error('Kitchen dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'DATABASE_ERROR',
+        message: 'Failed to fetch kitchen dashboard data'
+      }
+    });
+  }
+});
 
 /**
  * @swagger

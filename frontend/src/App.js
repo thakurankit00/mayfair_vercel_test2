@@ -10,6 +10,29 @@ import Dashboard from './components/dashboard/Dashboard';
 import RoomsPage from './components/rooms/RoomsPage';
 import RestaurantPage from './components/restaurant/RestaurantPage';
 import WaiterOrderInterface from './components/waiter/WaiterOrderInterface';
+import ChefDashboard from './components/kitchen/ChefDashboard';
+import UserManagement from './components/admin/UserManagement';
+import OrdersPage from './components/orders/OrdersPage';
+import BookingCalendar from './components/hotel/BookingCalendar';
+import NotificationContainer from './components/common/NotificationToast';
+import PopupNotification from './components/common/PopupNotification';
+import { useSocket } from './contexts/SocketContext';
+
+// Notification wrapper component
+const AppWithNotifications = ({ children }) => {
+  const { toastNotifications, removeToastNotification } = useSocket();
+
+  return (
+    <>
+      {children}
+      <PopupNotification />
+      <NotificationContainer
+        notifications={toastNotifications}
+        onRemoveNotification={removeToastNotification}
+      />
+    </>
+  );
+};
 
 // Placeholder components for routes that aren't built yet
 const PlaceholderPage = ({ title }) => (
@@ -31,9 +54,10 @@ const App = () => {
     <ErrorBoundary>
       <AuthProvider>
         <SocketProvider>
-          <Router>
-            <div className="App">
-            <Routes>
+          <AppWithNotifications>
+            <Router>
+              <div className="App">
+              <Routes>
               {/* Public routes */}
               <Route 
                 path="/login" 
@@ -95,31 +119,43 @@ const App = () => {
                 element={
                   <ProtectedRoute roles={['waiter', 'chef', 'bartender', 'manager', 'admin']}>
                     <Layout>
-                      <PlaceholderPage title="Order Management" />
+                      <OrdersPage />
                     </Layout>
                   </ProtectedRoute>
                 } 
               />
               
               {/* Waiter Interface */}
-              <Route 
-                path="/waiter" 
+              <Route
+                path="/waiter"
                 element={
                   <ProtectedRoute roles={['waiter', 'manager', 'admin']}>
                     <Layout>
                       <WaiterOrderInterface />
                     </Layout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              {/* Chef Dashboard */}
+              <Route
+                path="/kitchen"
+                element={
+                  <ProtectedRoute roles={['chef', 'bartender', 'manager', 'admin']}>
+                    <Layout>
+                      <ChefDashboard />
+                    </Layout>
+                  </ProtectedRoute>
+                }
               />
 
               {/* Bookings routes */}
               <Route 
                 path="/bookings" 
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute roles={['receptionist', 'manager', 'admin']}>
                     <Layout>
-                      <PlaceholderPage title="Bookings" />
+                      <BookingCalendar />
                     </Layout>
                   </ProtectedRoute>
                 } 
@@ -143,7 +179,7 @@ const App = () => {
                 element={
                   <ProtectedRoute roles={['admin']}>
                     <Layout>
-                      <PlaceholderPage title="User Management" />
+                      <UserManagement />
                     </Layout>
                   </ProtectedRoute>
                 } 
@@ -227,9 +263,10 @@ const App = () => {
                   </div>
                 } 
               />
-            </Routes>
-            </div>
-          </Router>
+              </Routes>
+              </div>
+            </Router>
+          </AppWithNotifications>
         </SocketProvider>
       </AuthProvider>
     </ErrorBoundary>

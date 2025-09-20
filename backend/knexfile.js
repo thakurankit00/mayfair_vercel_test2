@@ -12,9 +12,17 @@ module.exports = {
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
     },
     pool: {
-      min: 2,
-      max: 10
+      min: 1,
+      max: 5, // Reduced for Supabase connection limits
+      acquireTimeoutMillis: 30000,
+      createTimeoutMillis: 30000,
+      destroyTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000,
+      reapIntervalMillis: 1000,
+      createRetryIntervalMillis: 200,
+      propagateCreateError: false
     },
+    acquireConnectionTimeout: 30000,
     migrations: {
       tableName: 'knex_migrations',
       directory: './database/migrations'

@@ -10,7 +10,10 @@ class RoomBooking extends BaseModel {
       type: 'object',
       required: ['room_id', 'user_id', 'check_in_date', 'check_out_date', 'adults', 'total_amount'],
       properties: {
-        ...super.jsonSchema.properties,
+        id: { type: 'string', format: 'uuid' },
+        created_at: { type: 'string', format: 'date-time' },
+        updated_at: { type: 'string', format: 'date-time' },
+        booking_reference: { type: 'string' },
         room_id: { type: 'string', format: 'uuid' },
         user_id: { type: 'string', format: 'uuid' },
         check_in_date: { type: 'string', format: 'date' },
@@ -18,18 +21,26 @@ class RoomBooking extends BaseModel {
         adults: { type: 'integer', minimum: 1, maximum: 10 },
         children: { type: 'integer', minimum: 0, maximum: 8 },
         total_amount: { type: 'number', minimum: 0 },
-        status: { 
-          type: 'string', 
+        paid_amount: { type: 'number', minimum: 0 },
+        status: {
+          type: 'string',
           enum: ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'],
           default: 'pending'
         },
         platform_booking_id: { type: ['string', 'null'] },
-        platform: { 
+        platform: {
           type: ['string', 'null'],
           enum: [null, 'makemytrip', 'booking', 'airbnb', 'yatra', 'easemytrip', 'trivago', 'direct']
         },
         special_requests: { type: ['string', 'null'], maxLength: 1000 },
-        is_active: { type: 'boolean', default: true }
+        guest_info: { type: ['string', 'null'] },
+        checked_in_at: { type: ['string', 'null'], format: 'date-time' },
+        checked_out_at: { type: ['string', 'null'], format: 'date-time' },
+        checked_in_by: { type: ['string', 'null'], format: 'uuid' },
+        checked_out_by: { type: ['string', 'null'], format: 'uuid' },
+        cancellation_reason: { type: ['string', 'null'] },
+        cancelled_at: { type: ['string', 'null'], format: 'date-time' },
+        cancelled_by: { type: ['string', 'null'], format: 'uuid' }
       }
     };
   }
