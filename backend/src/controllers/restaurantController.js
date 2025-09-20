@@ -74,7 +74,7 @@ const updateMenuCategory = async (req, res) => {
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const Restaurant = require('../models/Restaurant');
-const { getTableBookingStatus } = require('./restaurantController');
+const { getTableBookingStatus } = require('../utils/tableStatus');
 
 /**
  * Restaurant Table Management Controller
@@ -161,7 +161,7 @@ const getTables = async (req, res) => {
 
     const tables = await query;
     
-    // Add booking status for each table
+    // Add comprehensive status for each table (reservations + orders)
     const today = new Date().toISOString().split('T')[0];
     const tablesWithStatus = await Promise.all(
       tables.map(async (table) => {
@@ -171,10 +171,45 @@ const getTables = async (req, res) => {
           .where('reservation_date', today)
           .whereIn('status', ['confirmed', 'seated'])
           .first();
-        
+
+        // Check if table has active orders
+        const activeOrder = await db('orders')
+          .where('table_id', table.id)
+          .whereIn('status', ['pending', 'preparing', 'ready'])
+          .first();
+
+        // Determine unified status
+        let unifiedStatus = 'available';
+        let reservationInfo = null;
+
+        if (reservation) {
+          reservationInfo = {
+            id: reservation.id,
+            reservation_reference: reservation.reservation_reference,
+            reservation_time: reservation.reservation_time,
+            party_size: reservation.party_size,
+            status: reservation.status,
+            special_requests: reservation.special_requests
+          };
+
+          if (reservation.status === 'seated' || activeOrder) {
+            unifiedStatus = 'occupied'; // Customer is dining
+          } else if (reservation.status === 'confirmed') {
+            unifiedStatus = 'reserved'; // Table is reserved but customer hasn't arrived
+          }
+        } else if (activeOrder) {
+          unifiedStatus = 'occupied'; // Walk-in customer dining
+        }
+
         return {
           ...table,
-          booking_status: reservation ? 'booked' : 'available'
+          // Legacy fields for backward compatibility
+          booking_status: reservation ? 'booked' : 'available',
+          // New unified status system
+          unified_status: unifiedStatus,
+          reservation_info: reservationInfo,
+          has_active_orders: !!activeOrder,
+          order_count: activeOrder ? 1 : 0
         };
       })
     );

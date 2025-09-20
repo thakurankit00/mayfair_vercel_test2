@@ -136,15 +136,48 @@ useEffect(() => {
     };
 
     // Listen for booking-related notifications
-    const bookingNotifications = notifications.filter(n => 
+    const bookingNotifications = notifications.filter(n =>
       ['booking-update', 'room-status-change', 'check-in', 'check-out'].includes(n.type)
     );
-    
+
     if (bookingNotifications.length > 0) {
       loadOccupiedRooms();
     }
   }
 }, [notifications, emitEvent]);
+
+// Listen for table reservation updates via socket
+useEffect(() => {
+  if (!emitEvent) return;
+
+  const handleTableStatusUpdate = (data) => {
+    console.log('🍽️ [TABLE] Table status updated:', data);
+
+    // Update tables state with new reservation status
+    setTables(prev =>
+      prev.map(table =>
+        table.id === data.table_id
+          ? {
+              ...table,
+              booking_status: data.booking_status,
+              unified_status: data.unified_status || data.booking_status,
+              reservation_info: data.reservation_info || null
+            }
+          : table
+      )
+    );
+  };
+
+  // Listen for table status updates from reservation system
+  emitEvent('table_status_updated', handleTableStatusUpdate);
+
+  return () => {
+    // Cleanup listener if possible
+    if (emitEvent.off) {
+      emitEvent.off('table_status_updated', handleTableStatusUpdate);
+    }
+  };
+}, [emitEvent]);
 
 // Load restaurant-specific data when restaurant is selected
 useEffect(() => {
@@ -906,9 +939,11 @@ const NewOrderTab = ({
                   className={`p-3 rounded-lg text-sm font-medium transition-colors ${
                     activeOrder?.tableId === table.id
                       ? 'bg-blue-100 text-blue-800 border-2 border-blue-500'
-                      : table.status === 'available'
+                      : (table.unified_status || table.status) === 'available'
                         ? 'bg-green-50 text-green-800 border border-green-200 hover:bg-green-100'
-                        : table.status === 'occupied'
+                        : (table.unified_status || table.status) === 'reserved'
+                        ? 'bg-yellow-50 text-yellow-800 border border-yellow-200 hover:bg-yellow-100'
+                        : (table.unified_status || table.status) === 'occupied'
                         ? 'bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100'
                         : 'bg-gray-100 text-gray-500 border border-gray-200'
                   }`}
@@ -920,13 +955,31 @@ const NewOrderTab = ({
                   <div className="text-xs capitalize">{table.location}</div>
                   <div className="text-xs mt-1">
                     <span className={`px-2 py-1 rounded-full text-xs ${
-                      table.status === 'available'
+                      (table.unified_status || table.status) === 'available'
                         ? 'bg-green-100 text-green-700'
+                        : (table.unified_status || table.status) === 'reserved'
+                        ? 'bg-yellow-100 text-yellow-700'
                         : 'bg-orange-100 text-orange-700'
                     }`}>
-                      {table.status === 'available' ? 'Available' : 'Has Orders'}
+                      {(table.unified_status || table.status) === 'available'
+                        ? 'Available'
+                        : (table.unified_status || table.status) === 'reserved'
+                        ? 'Reserved'
+                        : 'Occupied'}
                     </span>
                   </div>
+
+                  {/* Show reservation info if available */}
+                  {table.reservation_info && (
+                    <div className="text-xs mt-2 p-2 bg-blue-50 rounded border">
+                      <div className="font-medium text-blue-800">
+                        🍽️ Reserved for {table.reservation_info.party_size}
+                      </div>
+                      <div className="text-blue-600">
+                        {table.reservation_info.reservation_time} - {table.reservation_info.status}
+                      </div>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>

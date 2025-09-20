@@ -1,21 +1,10 @@
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const { getTableBookingStatus, getComprehensiveTableStatus } = require('../utils/tableStatus');
 
 /**
  * Table Reservation Management Controller
  */
-
-// Helper function to get table booking status
-const getTableBookingStatus = async (tableId) => {
-  const today = new Date().toISOString().split('T')[0];
-  const reservation = await db('table_reservations')
-    .where('table_id', tableId)
-    .where('reservation_date', today)
-    .whereIn('status', ['confirmed', 'seated'])
-    .first();
-  
-  return reservation ? 'booked' : 'available';
-};
 
 /**
  * Get table availability
@@ -282,11 +271,14 @@ const createReservation = async (req, res) => {
       .where('tr.id', reservationId)
       .first();
     
-    // Emit socket event for table status update
+    // Emit socket event for table status update with comprehensive info
     const io = req.app.get('io');
     if (io) {
-      const bookingStatus = await getTableBookingStatus(table_id);
-      io.emit('table_status_updated', { table_id, booking_status: bookingStatus });
+      const comprehensiveStatus = await getComprehensiveTableStatus(table_id);
+      io.emit('table_status_updated', {
+        table_id,
+        ...comprehensiveStatus
+      });
     }
     
     return res.status(201).json({
@@ -499,11 +491,14 @@ const updateReservation = async (req, res) => {
       .update(processedData)
       .returning('*');
     
-    // Emit socket event for table status update
+    // Emit socket event for table status update with comprehensive info
     const io = req.app.get('io');
     if (io) {
-      const bookingStatus = await getTableBookingStatus(existingReservation.table_id);
-      io.emit('table_status_updated', { table_id: existingReservation.table_id, booking_status: bookingStatus });
+      const comprehensiveStatus = await getComprehensiveTableStatus(existingReservation.table_id);
+      io.emit('table_status_updated', {
+        table_id: existingReservation.table_id,
+        ...comprehensiveStatus
+      });
     }
     
     return res.status(200).json({
@@ -585,11 +580,14 @@ const cancelReservation = async (req, res) => {
       .where('id', id)
       .update(updateData);
     
-    // Emit socket event for table status update
+    // Emit socket event for table status update with comprehensive info
     const io = req.app.get('io');
     if (io) {
-      const bookingStatus = await getTableBookingStatus(existingReservation.table_id);
-      io.emit('table_status_updated', { table_id: existingReservation.table_id, booking_status: bookingStatus });
+      const comprehensiveStatus = await getComprehensiveTableStatus(existingReservation.table_id);
+      io.emit('table_status_updated', {
+        table_id: existingReservation.table_id,
+        ...comprehensiveStatus
+      });
     }
     
     return res.status(200).json({
