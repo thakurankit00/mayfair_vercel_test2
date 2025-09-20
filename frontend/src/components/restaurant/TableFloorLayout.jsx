@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 // Simple chair icon using emoji
 const ChairIcon = ({ className, style }) => (
@@ -7,7 +7,53 @@ const ChairIcon = ({ className, style }) => (
   </div>
 );
 
+// Context Menu Component
+const ContextMenu = ({ x, y, table, onEdit, onDelete, onClose }) => {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50"
+      style={{ left: x, top: y }}
+    >
+      <button
+        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+        onClick={() => {
+          onEdit(table);
+          onClose();
+        }}
+      >
+        ✏️ Edit Table
+      </button>
+      <button
+        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 text-red-600 flex items-center gap-2"
+        onClick={() => {
+          onDelete(table);
+          onClose();
+        }}
+      >
+        🗑️ Delete Table
+      </button>
+    </div>
+  );
+};
+
 const TableFloorLayout = ({ tables = [], onTableClick, userRole, onTableEdit, onTableDelete }) => {
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const getTableColor = (status) => {
     switch (status) {
       case "available":
@@ -93,15 +139,59 @@ const TableFloorLayout = ({ tables = [], onTableClick, userRole, onTableEdit, on
     return "w-24 h-24";
   };
 
+  // Event handlers
+  const handleTableClick = (table) => {
+    setSelectedTable(table.id === selectedTable?.id ? null : table);
+    if (onTableClick) {
+      onTableClick(table);
+    }
+  };
+
+  const handleRightClick = (e, table) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      table: table
+    });
+  };
+
+  const handleEdit = (table) => {
+    if (onTableEdit) {
+      onTableEdit(table);
+    }
+  };
+
+  const handleDeleteClick = (table) => {
+    setShowDeleteConfirm(table);
+  };
+
+  const confirmDelete = () => {
+    if (onTableDelete && showDeleteConfirm) {
+      onTableDelete(showDeleteConfirm);
+    }
+    setShowDeleteConfirm(null);
+    setSelectedTable(null);
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm(null);
+  };
+
   const renderTable = (table) => {
     const tableSize = getTableSize(table.capacity);
+    const isSelected = selectedTable?.id === table.id;
+
     return (
       <div
         key={table.id}
-        className={`relative flex flex-col items-center justify-center text-white text-xs font-semibold cursor-pointer ${tableSize} ${getTableColor(
+        className={`relative flex flex-col items-center justify-center text-white text-xs font-semibold cursor-pointer transition-all duration-200 ${tableSize} ${getTableColor(
           table.booking_status || "available"
-        )} ${getTableShape(table.capacity)} shadow-lg z-10`}
-        onClick={() => onTableClick && onTableClick(table)}
+        )} ${getTableShape(table.capacity)} shadow-lg hover:shadow-xl hover:scale-105 z-10 ${
+          isSelected ? 'ring-4 ring-blue-400 ring-opacity-75' : ''
+        }`}
+        onClick={() => handleTableClick(table)}
+        onContextMenu={(e) => handleRightClick(e, table)}
         title={`Table ${table.table_number} - ${table.capacity} guests`}
       >
         <div className="text-center z-10">
@@ -109,6 +199,32 @@ const TableFloorLayout = ({ tables = [], onTableClick, userRole, onTableEdit, on
           <div className="text-xs">{table.capacity}</div>
         </div>
         {renderChairs(table.capacity, table.booking_status, tableSize)}
+
+        {/* Action buttons for selected table */}
+        {isSelected && (
+          <div className="absolute -top-2 -right-2 flex gap-1">
+            <button
+              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1 shadow-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEdit(table);
+              }}
+              title="Edit Table"
+            >
+              ✏️
+            </button>
+            <button
+              className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteClick(table);
+              }}
+              title="Delete Table"
+            >
+              🗑️
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -132,7 +248,13 @@ const TableFloorLayout = ({ tables = [], onTableClick, userRole, onTableEdit, on
       </div>
 
       {/* Floor Layout */}
-      <div className="relative bg-gray-50 rounded-lg p-4 grid grid-cols-6 gap-6 min-h-[600px]">
+      <div
+        className="relative bg-gray-50 rounded-lg p-4 grid grid-cols-6 gap-6 min-h-[600px]"
+        onClick={() => {
+          setContextMenu(null);
+          setSelectedTable(null);
+        }}
+      >
         {tables.map(renderTable)}
 
         {/* Entrance */}
@@ -140,6 +262,45 @@ const TableFloorLayout = ({ tables = [], onTableClick, userRole, onTableEdit, on
           🚪 Entrance
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          table={contextMenu.table}
+          onEdit={handleEdit}
+          onDelete={handleDeleteClick}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete Table {showDeleteConfirm.table_number}?
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+                onClick={cancelDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                onClick={confirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { restaurantTableApi } from "../../services/restaurantApi";
 
-const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
+const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTables = [] }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [validationErrors, setValidationErrors] = useState({});
   const [formData, setFormData] = useState({
     table_number: "",
     capacity: "",
@@ -25,22 +26,66 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
         is_active: item.is_active !== undefined ? item.is_active : true,
       });
       setError("");
+      setValidationErrors({});
     }
   }, [item, showEditModal]);
 
+  // Validation function for editing
+  const validateTableNumber = (tableNumber) => {
+    if (!tableNumber || !tableNumber.trim()) {
+      return "Table number is required";
+    }
+
+    const trimmedNumber = tableNumber.trim();
+    // Filter tables by current restaurant ID first
+    const restaurantTables = existingTables.filter(table =>
+      table.restaurant_id === item?.restaurant_id ||
+      table.restaurant_id === parseInt(item?.restaurant_id)
+    );
+
+    // Check for duplicates within the same restaurant, but exclude the current item being edited
+    const isDuplicate = restaurantTables.some(table =>
+      table.id !== item?.id &&
+      table.table_number.toString().toLowerCase() === trimmedNumber.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      return `Table ${trimmedNumber} already exists in this restaurant. Please choose a different table number.`;
+    }
+
+    return null;
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const newValue = type === "checkbox" ? checked :
+                    name === "is_active" ? value === "true" :
+                    name === "capacity" ? parseInt(value) || "" : value;
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === "checkbox" ? checked :
-              name === "is_active" ? value === "true" :
-              name === "capacity" ? parseInt(value) || "" : value
+      [name]: newValue
     }));
+
+    // Real-time validation for table number
+    if (name === "table_number") {
+      const validationError = validateTableNumber(newValue);
+      setValidationErrors(prev => ({
+        ...prev,
+        table_number: validationError
+      }));
+
+      // Clear general error when user starts typing
+      if (error && error.includes("already exists")) {
+        setError("");
+      }
+    }
   };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setValidationErrors({});
     setIsSubmitting(true);
 
     try {
@@ -49,6 +94,13 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
       // Validate required fields
       if (!formData.table_number || !formData.capacity) {
         throw new Error("Table number and capacity are required");
+      }
+
+      // Client-side duplicate validation
+      const tableNumberError = validateTableNumber(formData.table_number);
+      if (tableNumberError) {
+        setValidationErrors({ table_number: tableNumberError });
+        throw new Error(tableNumberError);
       }
 
       // Prepare data for API
@@ -72,7 +124,15 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
       setShowMenu(false);
     } catch (err) {
       console.error("Error updating table:", err);
-      setError(err.response?.data?.message || err.message || "Failed to update table");
+
+      // Handle duplicate table error specifically
+      if (err.response?.status === 409 || err.response?.data?.error?.code === 'DUPLICATE_TABLE') {
+        const errorMessage = `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
+        setValidationErrors({ table_number: errorMessage });
+        setError(errorMessage);
+      } else {
+        setError(err.response?.data?.message || err.message || "Failed to update table");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -176,10 +236,18 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [] }) => {
                   name="table_number"
                   value={formData.table_number}
                   onChange={handleChange}
-                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    validationErrors.table_number ? 'border-red-500 bg-red-50' : ''
+                  }`}
                   required
                   disabled={isSubmitting}
                 />
+                {validationErrors.table_number && (
+                  <p className="text-red-500 text-sm mt-1 flex items-center">
+                    <span className="mr-1">⚠️</span>
+                    {validationErrors.table_number}
+                  </p>
+                )}
               </div>
 
               <div>
