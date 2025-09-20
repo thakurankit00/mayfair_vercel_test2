@@ -302,6 +302,7 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
                     item={table}
                     onEdit={handleTableEdited}
                     onDelete={handleTableDeleted}
+                    existingTables={tables}
                   />
                 )}
               </div>
@@ -333,6 +334,7 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
           onClose={() => setShowAddTableModal(false)}
           onTableAdded={handleTableAdded}
           restaurantId={selectedRestaurant}
+          existingTables={tables}
         />
       )}
 

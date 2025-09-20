@@ -365,14 +365,15 @@ const updateTable = async (req, res) => {
       });
     }
     
-    // Check for duplicate table numbers (excluding current table)
+    // Check for duplicate table numbers within the same restaurant (excluding current table)
     if (table_number && table_number !== existingTable.table_number) {
       const duplicate = await db('restaurant_tables')
         .where('table_number', table_number)
+        .where('restaurant_id', existingTable.restaurant_id)
         .where('is_active', true)
         .where('id', '!=', id)
         .first();
-      
+
       if (duplicate) {
         return res.status(409).json({
           success: false,

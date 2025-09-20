@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { restaurantTableApi } from "../../services/restaurantApi";
 
-const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
+const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId, existingTables = [] }) => {
   const initialForm = {
     table_number: "",
     capacity: "",
@@ -13,31 +13,114 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
   const [formData, setFormData] = useState(initialForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [validationErrors, setValidationErrors] = useState({});
+  const [suggestedTableNumber, setSuggestedTableNumber] = useState("");
 
   useEffect(() => {
     setFormData(prev => ({ ...prev, restaurant_id: restaurantId || "" }));
   }, [restaurantId]);
 
+  // Generate suggested table number
+  useEffect(() => {
+    if (existingTables.length > 0 && restaurantId) {
+      // Filter tables by current restaurant ID
+      const restaurantTables = existingTables.filter(table =>
+        table.restaurant_id === restaurantId || table.restaurant_id === parseInt(restaurantId)
+      );
+
+      const existingNumbers = restaurantTables
+        .map(table => {
+          const num = parseInt(table.table_number.toString().replace(/\D/g, ''));
+          return isNaN(num) ? 0 : num;
+        })
+        .filter(num => num > 0)
+        .sort((a, b) => a - b);
+
+      let suggested = 1;
+      for (let i = 0; i < existingNumbers.length; i++) {
+        if (existingNumbers[i] === suggested) {
+          suggested++;
+        } else {
+          break;
+        }
+      }
+      setSuggestedTableNumber(suggested.toString());
+    } else {
+      setSuggestedTableNumber("1");
+    }
+  }, [existingTables, restaurantId]);
+
   if (!isOpen) return null;
+
+  // Validation functions
+  const validateTableNumber = (tableNumber) => {
+    if (!tableNumber || !tableNumber.trim()) {
+      return "Table number is required";
+    }
+
+    const trimmedNumber = tableNumber.trim();
+    // Filter tables by current restaurant ID and check for duplicates
+    const restaurantTables = existingTables.filter(table =>
+      table.restaurant_id === restaurantId || table.restaurant_id === parseInt(restaurantId)
+    );
+
+    const isDuplicate = restaurantTables.some(table =>
+      table.table_number.toString().toLowerCase() === trimmedNumber.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      return `Table ${trimmedNumber} already exists in this restaurant. Please choose a different table number.`;
+    }
+
+    return null;
+  };
+
+  const getConflictingTable = (tableNumber) => {
+    // Filter tables by current restaurant ID first
+    const restaurantTables = existingTables.filter(table =>
+      table.restaurant_id === restaurantId || table.restaurant_id === parseInt(restaurantId)
+    );
+
+    return restaurantTables.find(table =>
+      table.table_number.toString().toLowerCase() === tableNumber.trim().toLowerCase()
+    );
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const newValue = type === "checkbox" ? checked :
+                    name === "is_active" ? value === "true" :
+                    name === "capacity" ? parseInt(value) || "" : value;
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === "checkbox" ? checked : 
-              name === "is_active" ? value === "true" : 
-              name === "capacity" ? parseInt(value) || "" : value
+      [name]: newValue
     }));
+
+    // Real-time validation for table number
+    if (name === "table_number") {
+      const validationError = validateTableNumber(newValue);
+      setValidationErrors(prev => ({
+        ...prev,
+        table_number: validationError
+      }));
+
+      // Clear general error when user starts typing
+      if (error && error.includes("already exists")) {
+        setError("");
+      }
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setValidationErrors({});
     setIsSubmitting(true);
 
     try {
       console.log("Submitting form data:", formData);
-      
+
       // Validate required fields
       if (!formData.table_number || !formData.capacity) {
         throw new Error("Table number and capacity are required");
@@ -45,6 +128,13 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
 
       if (!restaurantId) {
         throw new Error("Please select a restaurant first");
+      }
+
+      // Client-side duplicate validation
+      const tableNumberError = validateTableNumber(formData.table_number);
+      if (tableNumberError) {
+        setValidationErrors({ table_number: tableNumberError });
+        throw new Error(tableNumberError);
       }
 
       // Prepare data for API - only send necessary fields
@@ -101,13 +191,20 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
 
     } catch (err) {
       console.error("Error adding table:", err);
-      
+
       // Handle different types of errors
       let errorMessage = "Failed to add table";
-      
+
       if (err.response) {
-        // Server responded with error
-        if (err.response.data) {
+        // Handle duplicate table error specifically
+        if (err.response.status === 409 || err.response.data?.error?.code === 'DUPLICATE_TABLE') {
+          const conflictingTable = getConflictingTable(formData.table_number);
+          errorMessage = `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
+
+          setValidationErrors({
+            table_number: errorMessage + (conflictingTable ? ` (Existing table has ${conflictingTable.capacity} seats)` : '')
+          });
+        } else if (err.response.data) {
           if (typeof err.response.data === 'string') {
             errorMessage = err.response.data;
           } else if (err.response.data.message) {
@@ -120,7 +217,7 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsSubmitting(false);
@@ -157,16 +254,54 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium">Table Number *</label>
-            <input
-              type="text"
-              name="table_number"
-              value={formData.table_number}
-              onChange={handleChange}
-              className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-              disabled={isSubmitting}
-              placeholder="e.g., T01, 1, A-1"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                name="table_number"
+                value={formData.table_number}
+                onChange={handleChange}
+                className={`w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  validationErrors.table_number ? 'border-red-500 bg-red-50' : ''
+                }`}
+                required
+                disabled={isSubmitting}
+                placeholder="e.g., T01, 1, A-1"
+              />
+              {suggestedTableNumber && !formData.table_number && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(prev => ({ ...prev, table_number: suggestedTableNumber }));
+                    setValidationErrors(prev => ({ ...prev, table_number: null }));
+                  }}
+                  className="absolute right-2 top-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200"
+                  disabled={isSubmitting}
+                >
+                  Use {suggestedTableNumber}
+                </button>
+              )}
+            </div>
+            {validationErrors.table_number && (
+              <p className="text-red-500 text-sm mt-1 flex items-center">
+                <span className="mr-1">⚠️</span>
+                {validationErrors.table_number}
+              </p>
+            )}
+            {suggestedTableNumber && formData.table_number && validationErrors.table_number && (
+              <p className="text-blue-600 text-sm mt-1">
+                💡 Suggestion: Try table number <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(prev => ({ ...prev, table_number: suggestedTableNumber }));
+                    setValidationErrors(prev => ({ ...prev, table_number: null }));
+                  }}
+                  className="underline hover:text-blue-800 font-medium"
+                  disabled={isSubmitting}
+                >
+                  {suggestedTableNumber}
+                </button>
+              </p>
+            )}
           </div>
 
           <div>
@@ -225,8 +360,8 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId }) => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700"
-              disabled={isSubmitting}
+              className="px-4 py-2 bg-light-orange text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              disabled={isSubmitting || validationErrors.table_number}
             >
               {isSubmitting ? "Adding..." : "Add Table"}
             </button>
