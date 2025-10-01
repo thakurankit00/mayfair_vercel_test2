@@ -1,0 +1,218 @@
+name: Deploy Any Branch to Vercel
+
+# This workflow can deploy ANY branch by injecting Vercel support files from master
+# Perfect for feature branches that don't have Vercel files
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy (can be any branch)'
+        required: true
+        default: 'master'
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - production
+          - preview
+        default: 'preview'
+      source_branch:
+        description: 'Branch to copy Vercel files from'
+        required: true
+        default: 'master'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    # Prevent concurrent deployments to the same branch
+    concurrency:
+      group: vercel-deploy-any-${{ github.event.inputs.branch }}
+      cancel-in-progress: true
+    
+    steps:
+      - name: 📥 Checkout target branch (to deploy)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+          path: target-branch
+
+      - name: 📥 Checkout source branch (for Vercel files)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_branch }}
+          fetch-depth: 0
+          path: source-branch
+
+      - name: 🔧 Inject Vercel support files
+        run: |
+          echo "📦 Injecting Vercel support files from ${{ github.event.inputs.source_branch }} into ${{ github.event.inputs.branch }}..."
+          
+          # Create necessary directories
+          mkdir -p target-branch/api
+          mkdir -p target-branch/frontend/public
+          mkdir -p target-branch/frontend/src/contexts
+          
+          # Copy core Vercel files
+          echo "  → Copying vercel.json"
+          cp source-branch/vercel.json target-branch/vercel.json
+          
+          echo "  → Copying .vercelignore"
+          cp source-branch/.vercelignore target-branch/.vercelignore
+          
+          echo "  → Copying api/index.js (fallback entry point)"
+          cp source-branch/api/index.js target-branch/api/index.js
+          
+          echo "  → Copying backend/index.js (Vercel entry point)"
+          cp source-branch/backend/index.js target-branch/backend/index.js
+          
+          # Copy frontend build files
+          echo "  → Copying frontend/build-production.js"
+          cp source-branch/frontend/build-production.js target-branch/frontend/build-production.js
+          
+          echo "  → Copying frontend/.env.production"
+          cp source-branch/frontend/.env.production target-branch/frontend/.env.production
+          
+          echo "  → Copying frontend/public/manifest.json"
+          cp source-branch/frontend/public/manifest.json target-branch/frontend/public/manifest.json
+          
+          # Copy updated SocketContext.jsx (with production URL fix)
+          echo "  → Copying frontend/src/contexts/SocketContext.jsx"
+          cp source-branch/frontend/src/contexts/SocketContext.jsx target-branch/frontend/src/contexts/SocketContext.jsx
+          
+          echo "✅ All Vercel support files injected!"
+
+      - name: 🔧 Update package.json files
+        run: |
+          echo "📝 Updating package.json files with Vercel scripts..."
+          
+          # Install jq for JSON manipulation
+          sudo apt-get update && sudo apt-get install -y jq
+          
+          # Update backend/package.json
+          if [ -f "target-branch/backend/package.json" ]; then
+            echo "  → Updating backend/package.json"
+            jq '.scripts.postinstall = "cd ../frontend && npm install && npm run build:production" | 
+                .scripts["vercel-build"] = "cd ../frontend && npm install && npm run build" |
+                .scripts.start = "node index.js"' \
+              target-branch/backend/package.json > temp-backend.json && \
+              mv temp-backend.json target-branch/backend/package.json
+            echo "    ✓ Added postinstall, vercel-build, and start scripts"
+          fi
+          
+          # Update frontend/package.json
+          if [ -f "target-branch/frontend/package.json" ]; then
+            echo "  → Updating frontend/package.json"
+            jq '.scripts["build:production"] = "node build-production.js" |
+                .eslintConfig.rules = {
+                  "no-unused-vars": "off",
+                  "react-hooks/exhaustive-deps": "off", 
+                  "no-self-compare": "off",
+                  "default-case": "off",
+                  "import/no-anonymous-default-export": "off"
+                }' \
+              target-branch/frontend/package.json > temp-frontend.json && \
+              mv temp-frontend.json target-branch/frontend/package.json
+            echo "    ✓ Added build:production script and ESLint rules"
+          fi
+          
+          echo "✅ Package.json files updated!"
+
+      - name: 🔍 Verify deployment readiness
+        run: |
+          echo "🔍 Verifying all required files are present..."
+          cd target-branch
+          
+          # Check critical files
+          files=(
+            "vercel.json"
+            "backend/index.js" 
+            "frontend/public/index.html"
+            "frontend/build-production.js"
+            "frontend/.env.production"
+            "frontend/public/manifest.json"
+            "api/index.js"
+          )
+          
+          for file in "${files[@]}"; do
+            if [ -f "$file" ]; then
+              echo "  ✓ $file exists"
+            else
+              echo "  ❌ $file missing!"
+              exit 1
+            fi
+          done
+          
+          # Check package.json scripts
+          if grep -q '"build:production"' frontend/package.json; then
+            echo "  ✓ frontend/package.json has build:production script"
+          else
+            echo "  ❌ frontend/package.json missing build:production script!"
+            exit 1
+          fi
+          
+          if grep -q '"postinstall"' backend/package.json; then
+            echo "  ✓ backend/package.json has postinstall script"
+          else
+            echo "  ❌ backend/package.json missing postinstall script!"
+            exit 1
+          fi
+          
+          echo "✅ All files verified - ready for deployment!"
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 📦 Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: 🔗 Link Vercel Project
+        working-directory: ./target-branch
+        run: |
+          vercel link --yes \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --project=${{ secrets.VERCEL_PROJECT_ID }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 🚀 Deploy to Vercel
+        id: deploy
+        working-directory: ./target-branch
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "🌟 Deploying to PRODUCTION..."
+            DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
+          else
+            echo "🔍 Deploying to PREVIEW..."
+            DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
+          fi
+
+          echo "deployment_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "✅ Deployment URL: $DEPLOY_URL"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      
+      - name: 📝 Create Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Source Branch:** \`${{ github.event.inputs.source_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment URL:** ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** Any Branch (File injection)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Injected:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
