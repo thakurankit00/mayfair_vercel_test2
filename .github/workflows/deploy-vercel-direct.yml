@@ -37,25 +37,25 @@ jobs:
           fetch-depth: 0
 
       - name: 🛠️ Ensure Vercel support files (self-healing)
+        shell: bash
         run: |
+          set -e
           echo "🧰 Ensuring required Vercel files (creating safe defaults if missing)..."
 
           # vercel.json
           if [ ! -f "vercel.json" ]; then
             echo "  • Creating vercel.json"
-            cat > vercel.json <<'JSON'
-          {
-            "version": 2,
-            "builds": [
-              { "src": "backend/index.js", "use": "@vercel/node", "config": { "maxLambdaSize": "50mb" } }
-            ],
-            "routes": [
-              { "src": "/api/(.*)", "dest": "backend/index.js" },
-              { "src": "/(.*)", "dest": "backend/index.js" }
-            ],
-            "env": { "NODE_ENV": "production", "DISABLE_ESLINT_PLUGIN": "true", "CI": "false" }
-          }
-JSON
+            printf '%s\n' '{' \
+              '  "version": 2,' \
+              '  "builds": [' \
+              '    { "src": "backend/index.js", "use": "@vercel/node", "config": { "maxLambdaSize": "50mb" } }' \
+              '  ],' \
+              '  "routes": [' \
+              '    { "src": "/api/(.*)", "dest": "backend/index.js" },' \
+              '    { "src": "/(.*)", "dest": "backend/index.js" }' \
+              '  ],' \
+              '  "env": { "NODE_ENV": "production", "DISABLE_ESLINT_PLUGIN": "true", "CI": "false" }' \
+              '}' > vercel.json
           else
             echo "  ✓ vercel.json exists"
           fi
@@ -64,19 +64,18 @@ JSON
           if [ ! -f "backend/index.js" ]; then
             echo "  • Creating backend/index.js"
             mkdir -p backend
-            cat > backend/index.js <<'JS'
-          const express=require('express');
-          const path=require('path');
-          const fs=require('fs');
-          const app=express();
-          app.get('/api/health',(req,res)=>res.json({success:true,data:{status:'OK'}}));
-          try{
-            const routesDir=path.join(__dirname,'src','routes');
-            const files=fs.readdirSync(routesDir).filter(f=>f.endsWith('.js'));
-            files.forEach(file=>{ try{ const r=require(path.join(routesDir,file)); if(typeof r==='function'){ app.use(`/api/v1/${file.replace(/\.js$/,'')}`,r);} } catch(e){ console.log('skip route',file,e.message);} });
-          }catch(_){/* no routes dir */}
-          module.exports=app;
-JS
+            printf '%s\n' \
+              'const express=require("express");' \
+              'const path=require("path");' \
+              'const fs=require("fs");' \
+              'const app=express();' \
+              'app.get("/api/health",(req,res)=>res.json({success:true,data:{status:"OK"}}));' \
+              'try{' \
+              '  const routesDir=path.join(__dirname,"src","routes");' \
+              '  const files=fs.readdirSync(routesDir).filter(f=>f.endsWith(".js"));' \
+              '  files.forEach(file=>{ try{ const r=require(path.join(routesDir,file)); if(typeof r==="function"){ app.use(`/api/v1/${file.replace(/\\.js$/,"")}`,r);} } catch(e){ console.log("skip route",file,e.message);} });' \
+              '}catch(_){/* no routes dir */}' \
+              'module.exports=app;' > backend/index.js
           else
             echo "  ✓ backend/index.js exists"
           fi
@@ -85,16 +84,17 @@ JS
           if [ ! -f "frontend/build-production.js" ]; then
             echo "  • Creating frontend/build-production.js"
             mkdir -p frontend
-            cat > frontend/build-production.js <<'JS'
-          #!/usr/bin/env node
-          const { spawn } = require('child_process');
-          const build = spawn('npm', ['run', 'build'], {
-            stdio: 'inherit',
-            env: { ...process.env, DISABLE_ESLINT_PLUGIN: 'true', CI: 'false', GENERATE_SOURCEMAP: 'false' }
-          });
-          build.on('close', (code) => process.exit(code||0));
-          build.on('error', (err) => { console.error(err); process.exit(1); });
-JS
+            printf '%s\n' \
+              '#!/usr/bin/env node' \
+              'const { spawn } = require("child_process");' \
+              'const build = spawn("npm", ["run", "build"], {' \
+              '  stdio: "inherit",' \
+              '  env: { ...process.env, DISABLE_ESLINT_PLUGIN: "true", CI: "false", GENERATE_SOURCEMAP: "false" }' \
+              '});' \
+              'build.on("close", (code) => process.exit(code||0));' \
+              'build.on("error", (err) => { console.error(err); process.exit(1); });' \
+              > frontend/build-production.js
+            chmod +x frontend/build-production.js
           else
             echo "  ✓ frontend/build-production.js exists"
           fi
@@ -103,7 +103,7 @@ JS
           if [ ! -f "frontend/.env.production" ]; then
             echo "  • Creating frontend/.env.production"
             mkdir -p frontend
-            echo "REACT_APP_API_URL=/api/v1" > frontend/.env.production
+            echo 'REACT_APP_API_URL=/api/v1' > frontend/.env.production
           else
             echo "  ✓ frontend/.env.production exists"
           fi
@@ -112,9 +112,7 @@ JS
           if [ ! -f "frontend/public/manifest.json" ]; then
             echo "  • Creating frontend/public/manifest.json"
             mkdir -p frontend/public
-            cat > frontend/public/manifest.json <<'JSON'
-          { "short_name": "Mayfair", "name": "Mayfair Hotel Management System", "start_url": ".", "display": "standalone" }
-JSON
+            printf '%s\n' '{ "short_name": "Mayfair", "name": "Mayfair Hotel Management System", "start_url": ".", "display": "standalone" }' > frontend/public/manifest.json
           else
             echo "  ✓ frontend/public/manifest.json exists"
           fi
@@ -124,19 +122,7 @@ JSON
       - name: 🧩 Ensure backend postinstall to build frontend on Vercel
         run: |
           if [ -f "backend/package.json" ]; then
-            node - <<'NODE'
-          const fs=require('fs');
-          const p='backend/package.json';
-          const pkg=JSON.parse(fs.readFileSync(p,'utf8'));
-          pkg.scripts=pkg.scripts||{};
-          if(!pkg.scripts.postinstall){
-            pkg.scripts.postinstall="cd ../frontend && npm install && npm run build:production";
-            fs.writeFileSync(p,JSON.stringify(pkg,null,2));
-            console.log('Added postinstall to backend/package.json');
-          } else {
-            console.log('postinstall already present');
-          }
-NODE
+            node -e 'const fs=require("fs"); const p="backend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; if(!pkg.scripts.postinstall){ pkg.scripts.postinstall="cd ../frontend && npm install && npm run build:production"; fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Added postinstall to backend/package.json"); } else { console.log("postinstall already present"); }'
           else
             echo "ℹ️ backend/package.json not found; skipping postinstall injection"
           fi
