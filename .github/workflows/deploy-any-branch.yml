@@ -1,6 +1,7 @@
-name: Deploy Any Branch to Vercel (Self-Sufficient)
+name: Deploy Any Branch - Dual Environment (Self-Sufficient)
 
-# This workflow can deploy ANY branch by generating all Vercel support files automatically
+# This workflow can deploy ANY branch to BOTH environments simultaneously!
+# ✅ Preview: dev.mayfairmandi.com | ✅ Production: prod.mayfairmandi.com
 # No dependency on master branch - completely self-sufficient!
 
 on:
@@ -10,14 +11,16 @@ on:
         description: 'Branch to deploy (can be any branch)'
         required: true
         default: 'master'
-      environment:
-        description: 'Deployment environment'
-        required: true
-        type: choice
-        options:
-          - production
-          - preview
-        default: 'preview'
+      deploy_preview:
+        description: 'Deploy to Preview (dev.mayfairmandi.com)'
+        required: false
+        type: boolean
+        default: true
+      deploy_production:
+        description: 'Deploy to Production (prod.mayfairmandi.com)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -25,10 +28,26 @@ jobs:
     
     # Prevent concurrent deployments to the same branch
     concurrency:
-      group: vercel-deploy-self-sufficient-${{ github.event.inputs.branch }}
+      group: vercel-deploy-dual-${{ github.event.inputs.branch }}
       cancel-in-progress: true
 
     steps:
+      - name: 🔍 Validate deployment selection
+        run: |
+          if [ "${{ github.event.inputs.deploy_preview }}" != "true" ] && [ "${{ github.event.inputs.deploy_production }}" != "true" ]; then
+            echo "❌ Error: At least one environment must be selected for deployment!"
+            echo "Please check either 'Deploy to Preview' or 'Deploy to Production' (or both)"
+            exit 1
+          fi
+
+          echo "✅ Deployment validation passed!"
+          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
+            echo "  → Preview deployment: ENABLED (dev.mayfairmandi.com)"
+          fi
+          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
+            echo "  → Production deployment: ENABLED (prod.mayfairmandi.com)"
+          fi
+
       - name: 📥 Checkout target branch (to deploy)
         uses: actions/checkout@v4
         with:
@@ -421,20 +440,37 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: 🚀 Deploy to Vercel
-        id: deploy
+      - name: 🚀 Deploy to Preview Environment
+        id: deploy_preview
+        if: ${{ github.event.inputs.deploy_preview == 'true' }}
         working-directory: ./target-branch
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
-            echo "🌟 Deploying to PRODUCTION..."
-            DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
-          else
-            echo "🔍 Deploying to PREVIEW..."
-            DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
-          fi
+          echo "🔍 Deploying to PREVIEW (dev.mayfairmandi.com)..."
+          PREVIEW_DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
+          PREVIEW_CUSTOM_URL="https://dev.mayfairmandi.com"
 
-          echo "deployment_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "✅ Deployment URL: $DEPLOY_URL"
+          echo "preview_deploy_url=$PREVIEW_DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "preview_custom_url=$PREVIEW_CUSTOM_URL" >> $GITHUB_OUTPUT
+          echo "✅ Preview Vercel URL: $PREVIEW_DEPLOY_URL"
+          echo "✅ Preview Custom URL: $PREVIEW_CUSTOM_URL"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 🌟 Deploy to Production Environment
+        id: deploy_production
+        if: ${{ github.event.inputs.deploy_production == 'true' }}
+        working-directory: ./target-branch
+        run: |
+          echo "🌟 Deploying to PRODUCTION (prod.mayfairmandi.com)..."
+          PROD_DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
+          PROD_CUSTOM_URL="https://prod.mayfairmandi.com"
+
+          echo "prod_deploy_url=$PROD_DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "prod_custom_url=$PROD_CUSTOM_URL" >> $GITHUB_OUTPUT
+          echo "✅ Production Vercel URL: $PROD_DEPLOY_URL"
+          echo "✅ Production Custom URL: $PROD_CUSTOM_URL"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -442,16 +478,45 @@ jobs:
       
       - name: 📝 Create Deployment Summary
         run: |
-          echo "## 🚀 Self-Sufficient Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Dual Environment Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** \`${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment URL:** ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Preview Environment Summary
+          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
+            echo "### 🔍 Preview Environment" >> $GITHUB_STEP_SUMMARY
+            echo "- **Custom Domain:** ${{ steps.deploy_preview.outputs.preview_custom_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Vercel URL:** ${{ steps.deploy_preview.outputs.preview_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Production Environment Summary
+          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
+            echo "### � Production Environment" >> $GITHUB_STEP_SUMMARY
+            echo "- **Custom Domain:** ${{ steps.deploy_production.outputs.prod_custom_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Vercel URL:** ${{ steps.deploy_production.outputs.prod_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow:** Self-Sufficient (Auto-generated files)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** Self-Sufficient Dual Environment" >> $GITHUB_STEP_SUMMARY
           echo "- **Files Generated:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
           echo "- **No Dependencies:** Completely independent of master branch" >> $GITHUB_STEP_SUMMARY
+
+          # Environment Status
+          echo "- **Environments Deployed:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
+            echo "  - ✅ Preview (dev.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "  - ⏭️ Preview (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
+            echo "  - ✅ Production (prod.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "  - ⏭️ Production (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
