@@ -63,12 +63,13 @@ jobs:
           echo "🔎 Determining support source..."
           if [ -d "__support_main" ]; then SUPPORT_ROOT="__support_main"; elif [ -d "__support_master" ]; then SUPPORT_ROOT="__support_master"; else echo "❌ No support branch (main/master) available"; exit 1; fi
           echo "Using $SUPPORT_ROOT for support files"
+          PROJECT_DIR="mayfair-masterv2"
 
           inject_file() {
             local src="$1"; local dest="$2";
             if [ ! -f "$dest" ]; then
               mkdir -p "$(dirname "$dest")"
-              cp -f "$SUPPORT_ROOT/$src" "$dest"
+              cp -f "$SUPPORT_ROOT/$PROJECT_DIR/$src" "$dest"
               echo "  ➕ Injected $dest"
             else
               echo "  ✓ $dest already present"
