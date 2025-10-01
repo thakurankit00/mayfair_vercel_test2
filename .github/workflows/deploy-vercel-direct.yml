@@ -1,6 +1,4 @@
 name: Deploy to Vercel (Direct)
-run-name: "Vercel Deploy • ${{ github.event.inputs.environment || 'preview' }} • ${{ github.event.inputs.branch || github.ref_name }}"
-
 
 # This workflow deploys the branch AS-IS to Vercel
 # All required files must be committed to the repository
@@ -36,96 +34,44 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-      - name: 🛠️ Ensure Vercel support files (self-healing)
-        shell: bash
+      - name: � Verify required files
         run: |
-          set -e
-          echo "🧰 Ensuring required Vercel files (creating safe defaults if missing)..."
-
-          # vercel.json
+          echo "📦 Verifying required Vercel files..."
+          # Check critical files
           if [ ! -f "vercel.json" ]; then
-            echo "  • Creating vercel.json"
-            printf '%s\n' '{' \
-              '  "version": 2,' \
-              '  "builds": [' \
-              '    { "src": "backend/index.js", "use": "@vercel/node", "config": { "maxLambdaSize": "50mb", "includeFiles": "frontend/build/**" } }' \
-              '  ],' \
-              '  "routes": [' \
-              '    { "src": "/api/(.*)", "dest": "backend/index.js" },' \
-              '    { "src": "/(.*)", "dest": "backend/index.js" }' \
-              '  ],' \
-              '  "env": { "NODE_ENV": "production", "DISABLE_ESLINT_PLUGIN": "true", "CI": "false" }' \
-              '}' > vercel.json
-          else
-            echo "  ✓ vercel.json exists"
-          fi
+            echo "❌ ERROR: vercel.json not found!"; exit 1; fi
+          echo "  ✓ vercel.json exists"
 
-          # backend/index.js (serverless Express entry with dynamic route loading)
           if [ ! -f "backend/index.js" ]; then
-            echo "  • Creating backend/index.js"
-            mkdir -p backend
-            printf '%s\n' \
-              'const express=require("express");' \
-              'const path=require("path");' \
-              'const fs=require("fs");' \
-              'const app=express();' \
-              'app.get("/api/health",(req,res)=>res.json({success:true,data:{status:"OK"}}));' \
-              'try{' \
-              '  const routesDir=path.join(__dirname,"src","routes");' \
-              '  const files=fs.readdirSync(routesDir).filter(f=>f.endsWith(".js"));' \
-              '  files.forEach(file=>{ try{ const r=require(path.join(routesDir,file)); if(typeof r==="function"){ app.use(`/api/v1/${file.replace(/\\.js$/,"")}`,r);} } catch(e){ console.log("skip route",file,e.message);} });' \
-              '}catch(_){/* no routes dir */}' \
-              'module.exports=app;' > backend/index.js
-          else
-            echo "  ✓ backend/index.js exists"
-          fi
+            echo "❌ ERROR: backend/index.js not found!"; exit 1; fi
+          echo "  ✓ backend/index.js exists"
 
-          # frontend/build-production.js
+          if [ ! -f "frontend/public/index.html" ]; then
+            echo "❌ ERROR: frontend/public/index.html not found!"; exit 1; fi
+          echo "  ✓ frontend/public/index.html exists"
+
           if [ ! -f "frontend/build-production.js" ]; then
-            echo "  • Creating frontend/build-production.js"
-            mkdir -p frontend
-            printf '%s\n' \
-              '#!/usr/bin/env node' \
-              'const { spawn } = require("child_process");' \
-              'const build = spawn("npm", ["run", "build"], {' \
-              '  stdio: "inherit",' \
-              '  env: { ...process.env, DISABLE_ESLINT_PLUGIN: "true", CI: "false", GENERATE_SOURCEMAP: "false" }' \
-              '});' \
-              'build.on("close", (code) => process.exit(code||0));' \
-              'build.on("error", (err) => { console.error(err); process.exit(1); });' \
-              > frontend/build-production.js
-            chmod +x frontend/build-production.js
-          else
-            echo "  ✓ frontend/build-production.js exists"
-          fi
+            echo "❌ ERROR: frontend/build-production.js not found!"; exit 1; fi
+          echo "  ✓ frontend/build-production.js exists"
 
-          # frontend/.env.production
           if [ ! -f "frontend/.env.production" ]; then
-            echo "  • Creating frontend/.env.production"
-            mkdir -p frontend
-            echo 'REACT_APP_API_URL=/api/v1' > frontend/.env.production
-          else
-            echo "  ✓ frontend/.env.production exists"
-          fi
+            echo "❌ ERROR: frontend/.env.production not found!"; exit 1; fi
+          echo "  ✓ frontend/.env.production exists"
 
-          # frontend/public/manifest.json
           if [ ! -f "frontend/public/manifest.json" ]; then
-            echo "  • Creating frontend/public/manifest.json"
-            mkdir -p frontend/public
-            printf '%s\n' '{ "short_name": "Mayfair", "name": "Mayfair Hotel Management System", "start_url": ".", "display": "standalone" }' > frontend/public/manifest.json
-          else
-            echo "  ✓ frontend/public/manifest.json exists"
-          fi
+            echo "❌ ERROR: frontend/public/manifest.json not found!"; exit 1; fi
+          echo "  ✓ frontend/public/manifest.json exists"
 
-          echo "✅ Support files ensured"
+          # Check package.json scripts
+          if ! grep -q '"build:production"' frontend/package.json; then
+            echo "❌ ERROR: build:production script not found in frontend/package.json!"; exit 1; fi
+          echo "  ✓ frontend/package.json has build:production script"
 
-      - name: 🧩 Ensure backend postinstall builds and copies frontend
-        run: |
-          if [ -f "backend/package.json" ]; then
-            node -e 'const fs=require("fs"); const p="backend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; const buildProd="cd ../frontend && npm install && npm run build:production"; const copyGroup="(mkdir -p ../backend/public && cp -r ../frontend/build/* ../backend/public/) || true"; if(!pkg.scripts.postinstall){ pkg.scripts.postinstall=`${buildProd} && ${copyGroup}`; } else { if(!pkg.scripts.postinstall.includes("build:production")) pkg.scripts.postinstall = `${pkg.scripts.postinstall} && ${buildProd}`; if(!pkg.scripts.postinstall.includes("../backend/public")) pkg.scripts.postinstall = `${pkg.scripts.postinstall} && ${copyGroup}`; } fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Ensured postinstall builds and copies frontend to backend/public");'
-          else
-            echo "ℹ️ backend/package.json not found; skipping postinstall injection"
-          fi
+          if ! grep -q '"postinstall"' backend/package.json; then
+            echo "❌ ERROR: postinstall script not found in backend/package.json!"; exit 1; fi
+          echo "  ✓ backend/package.json has postinstall script"
+
+          echo "✅ All required files present!"
 
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4
@@ -144,14 +90,6 @@ jobs:
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Ensure frontend build:production script
-        run: |
-          if [ -f "frontend/package.json" ]; then
-            node -e 'const fs=require("fs"); const p="frontend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; if(!pkg.scripts["build:production"]){ pkg.scripts["build:production"]="node build-production.js"; fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Added build:production to frontend/package.json"); } else { console.log("build:production already present"); }'
-          else
-            echo "ℹ️ frontend/package.json not found; skipping build:production injection"
-          fi
 
       - name: 🚀 Deploy to Vercel
         id: deploy
