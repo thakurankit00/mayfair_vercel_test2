@@ -1,6 +1,6 @@
 name: Deploy to DEV & PROD
 
-run-name: "Deploy • ${{ github.event.inputs.deploy_preview == 'true' && 'dev' || '' }}${{ github.event.inputs.deploy_preview == 'true' && github.event.inputs.deploy_production == 'true' && ' & ' || '' }}${{ github.event.inputs.deploy_production == 'true' && 'prod' || '' }} • ${{ github.event.inputs.branch || github.ref_name }}"
+run-name: "Deploy • ${{ github.event.inputs.deploy_preview == 'true' && github.event.inputs.deploy_production == 'true' && 'dev & prod' || github.event.inputs.deploy_preview == 'true' && 'dev' || github.event.inputs.deploy_production == 'true' && 'prod' || 'no env selected' }} • ${{ github.event.inputs.branch || github.ref_name }}"
 
 # This workflow can deploy ANY branch to BOTH environments simultaneously!
 # Dev: dev.mayfairmandi.com | Production: prod.mayfairmandi.com
