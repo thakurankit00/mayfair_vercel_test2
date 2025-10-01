@@ -36,10 +36,10 @@ jobs:
 
           echo "Deployment validation passed!"
           if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
-            echo "  -> Preview deployment: ENABLED (dev.mayfairmandi.com)"
+            echo "  -> Preview deployment: ENABLED"
           fi
           if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
-            echo "  -> Production deployment: ENABLED (prod.mayfairmandi.com)"
+            echo "  -> Production deployment: ENABLED"
           fi
 
   deploy-preview:
@@ -446,14 +446,12 @@ jobs:
         id: deploy
         working-directory: ./target-branch
         run: |
-          echo "Deploying to PREVIEW (dev.mayfairmandi.com)..."
+          echo "Deploying to PREVIEW..."
           PREVIEW_DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
           PREVIEW_CUSTOM_URL="https://dev.mayfairmandi.com"
 
           echo "preview_deploy_url=$PREVIEW_DEPLOY_URL" >> $GITHUB_OUTPUT
           echo "preview_custom_url=$PREVIEW_CUSTOM_URL" >> $GITHUB_OUTPUT
-          echo "Preview Vercel URL: $PREVIEW_DEPLOY_URL"
-          echo "Preview Custom URL: $PREVIEW_CUSTOM_URL"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -878,14 +876,12 @@ jobs:
         id: deploy
         working-directory: ./target-branch
         run: |
-          echo "Deploying to PRODUCTION (prod.mayfairmandi.com)..."
+          echo "Deploying to PRODUCTION..."
           PROD_DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
           PROD_CUSTOM_URL="https://prod.mayfairmandi.com"
 
           echo "prod_deploy_url=$PROD_DEPLOY_URL" >> $GITHUB_OUTPUT
           echo "prod_custom_url=$PROD_CUSTOM_URL" >> $GITHUB_OUTPUT
-          echo "Production Vercel URL: $PROD_DEPLOY_URL"
-          echo "Production Custom URL: $PROD_CUSTOM_URL"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
