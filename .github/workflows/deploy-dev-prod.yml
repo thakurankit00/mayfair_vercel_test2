@@ -2,9 +2,6 @@ name: Deploy to DEV & PROD
 
 run-name: "Deploy • ${{ github.event.inputs.deploy_dev == 'true' && github.event.inputs.deploy_production == 'true' && 'dev & prod' || github.event.inputs.deploy_dev == 'true' && 'dev' || github.event.inputs.deploy_production == 'true' && 'prod' || 'no env selected' }} • ${{ github.event.inputs.branch || github.ref_name }}"
 
-# This workflow can deploy ANY branch to BOTH environments simultaneously!
-# Dev: dev.mayfairmandi.com | Production: prod.mayfairmandi.com
-# No dependency on master branch - completely self-sufficient!
 
 on:
   workflow_dispatch:
