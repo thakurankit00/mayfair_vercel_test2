@@ -1,0 +1,90 @@
+name: Sync Aiven DB with Supabase
+
+run-name: "DB Sync • Supabase → Aiven • ${{ github.actor }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sync:
+        description: 'Type "CONFIRM" to proceed with database sync (this will overwrite Aiven DB)'
+        required: true
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔍 Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_sync }}" != "CONFIRM" ]; then
+            echo "❌ Error: Database sync not confirmed!"
+            echo "Please type 'CONFIRM' in the input field to proceed with the sync."
+            echo "⚠️  WARNING: This operation will overwrite the Aiven database with Supabase data!"
+            exit 1
+          fi
+          
+          echo "✅ Database sync confirmed - proceeding with operation"
+          echo "🔄 This will sync Supabase (source) → Aiven (destination)"
+
+  sync-database:
+    needs: validate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔧 Install PostgreSQL client
+        run: |
+          echo "📦 Installing PostgreSQL client tools..."
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          
+          echo "✅ PostgreSQL client installed"
+          psql --version
+
+      - name: 🔄 Sync Database (Supabase → Aiven)
+        run: |
+          echo "🚀 Starting database sync operation..."
+          echo "📤 Source: Supabase (aws-1-ap-southeast-1.pooler.supabase.com)"
+          echo "📥 Destination: Aiven (mayfair-mailcow.k.aivencloud.com)"
+          echo ""
+          
+          echo "⏳ Dumping data from Supabase and importing to Aiven..."
+          
+          # Set PGPASSWORD for source database
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          
+          # Run the sync command
+          pg_dump \
+            --host=aws-1-ap-southeast-1.pooler.supabase.com \
+            --port=6543 \
+            --username=postgres.aglpkgpajcgjdlfunwyr \
+            --dbname=postgres \
+            --no-owner \
+            --no-acl \
+            --verbose \
+          | psql "postgres://avnadmin:${{ secrets.AIVEN_DB_PASSWORD }}@mayfair-mailcow.k.aivencloud.com:19870/defaultdb?sslmode=require"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Database sync completed successfully!"
+          else
+            echo "❌ Database sync failed!"
+            exit 1
+          fi
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: 📝 Create Sync Summary
+        run: |
+          echo "## 🔄 Database Sync Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Sync Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source:** Supabase (aws-1-ap-southeast-1.pooler.supabase.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Destination:** Aiven (mayfair-mailcow.k.aivencloud.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Operation:** Full database dump and restore" >> $GITHUB_STEP_SUMMARY
+          echo "- **Options:** --no-owner --no-acl" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Execution Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Completed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note:** The Aiven database has been overwritten with Supabase data." >> $GITHUB_STEP_SUMMARY
