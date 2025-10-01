@@ -60,9 +60,6 @@ jobs:
           echo "  → Copying vercel.json"
           cp source-branch/vercel.json target-branch/vercel.json
           
-          echo "  → Copying .vercelignore"
-          cp source-branch/.vercelignore target-branch/.vercelignore
-          
           echo "  → Copying api/index.js (fallback entry point)"
           cp source-branch/api/index.js target-branch/api/index.js
           
