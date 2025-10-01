@@ -1,4 +1,6 @@
-name: Vercel Deploy
+name: Deploy to DEV & PROD
+
+run-name: "Deploy • ${{ github.event.inputs.deploy_preview == 'true' && 'dev' || '' }}${{ github.event.inputs.deploy_preview == 'true' && github.event.inputs.deploy_production == 'true' && ' & ' || '' }}${{ github.event.inputs.deploy_production == 'true' && 'prod' || '' }} • ${{ github.event.inputs.branch || github.ref_name }}"
 
 # This workflow can deploy ANY branch to BOTH environments simultaneously!
 # Dev: dev.mayfairmandi.com | Production: prod.mayfairmandi.com
@@ -426,19 +428,12 @@ jobs:
           name: target-branch
           path: target-branch
 
-  deploy:
+  deploy-dev:
     needs: prepare
+    if: ${{ github.event.inputs.deploy_dev == 'true' }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        env: [dev, prod]
-    if: >-
-      ${{ 
-        (matrix.env == 'dev' && github.event.inputs.deploy_dev == 'true') ||
-        (matrix.env == 'prod' && github.event.inputs.deploy_production == 'true')
-      }}
     concurrency:
-      group: vercel-deploy-${{ matrix.env }}-${{ github.event.inputs.branch }}
+      group: vercel-deploy-dev-${{ github.event.inputs.branch }}
       cancel-in-progress: true
     steps:
       - name: Download prepared files
@@ -466,49 +461,93 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Deploy to Environment
+      - name: Deploy to Dev Environment
         id: deploy
         working-directory: ./target-branch
         run: |
-          echo "Deploying to ${{ matrix.env }}..."
-          if [ "${{ matrix.env }}" == "prod" ]; then
-            FLAGS="--prod"
-          else
-            FLAGS=""
-          fi
-          DEPLOY_URL=$(vercel deploy $FLAGS --yes --token=${{ secrets.VERCEL_TOKEN }})
-          if [ "${{ matrix.env }}" == "dev" ]; then
-            CUSTOM_URL="https://dev.mayfairmandi.com"
-          else
-            CUSTOM_URL="https://prod.mayfairmandi.com"
-          fi
-          DISPLAY_ENV=$(if [ "${{ matrix.env }}" = "dev" ]; then echo "Dev"; else echo "Prod"; fi)
+          echo "Deploying to DEV..."
+          DEV_DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
+          DEV_CUSTOM_URL="https://dev.mayfairmandi.com"
 
-          echo "deploy_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "custom_url=$CUSTOM_URL" >> $GITHUB_OUTPUT
-          echo "display_env=$DISPLAY_ENV" >> $GITHUB_OUTPUT
+          echo "dev_deploy_url=$DEV_DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "dev_custom_url=$DEV_CUSTOM_URL" >> $GITHUB_OUTPUT
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Fetch Vercel Deployment Logs
-        working-directory: ./target-branch
+      - name: Create Dev Deploy Summary
         run: |
-          echo "Fetching logs from Vercel deployment..."
-          vercel logs ${{ steps.deploy.outputs.deploy_url }} --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-      - name: Create Deploy Summary
-        run: |
-          echo "## 🚀 ${{ steps.deploy.outputs.display_env }} Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Dev Deploy Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**${{ steps.deploy.outputs.display_env }} URL:** ${{ steps.deploy.outputs.custom_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dev URL:** ${{ steps.deploy.outputs.dev_custom_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Vercel URL:** ${{ steps.deploy.outputs.deploy_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Vercel URL:** ${{ steps.deploy.outputs.dev_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+  deploy-production:
+    needs: prepare
+    if: ${{ github.event.inputs.deploy_production == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vercel-deploy-prod-${{ github.event.inputs.branch }}
+      cancel-in-progress: true
+    steps:
+      - name: Download prepared files
+        uses: actions/download-artifact@v4
+        with:
+          name: target-branch
+          path: target-branch
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Link Vercel Project
+        working-directory: ./target-branch
+        run: |
+          vercel link --yes \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --project=${{ secrets.VERCEL_PROJECT_ID }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy to Production Environment
+        id: deploy
+        working-directory: ./target-branch
+        run: |
+          echo "Deploying to PRODUCTION..."
+          PROD_DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
+          PROD_CUSTOM_URL="https://prod.mayfairmandi.com"
+
+          echo "prod_deploy_url=$PROD_DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "prod_custom_url=$PROD_CUSTOM_URL" >> $GITHUB_OUTPUT
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Create Prod Deploy Summary
+        run: |
+          echo "## 🌟 Prod Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Prod URL:** ${{ steps.deploy.outputs.prod_custom_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Vercel URL:** ${{ steps.deploy.outputs.prod_deploy_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
