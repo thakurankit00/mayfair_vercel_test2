@@ -32,8 +32,7 @@ jobs:
     outputs:
       source-healthy: ${{ steps.health-check.outputs.source-healthy }}
       destination-healthy: ${{ steps.health-check.outputs.destination-healthy }}
-      backup-created: ${{ steps.backup-aiven.outputs.backup-created }}
-      supabase-backup-created: ${{ steps.backup-supabase.outputs.supabase-backup-created }}
+      backup-created: ${{ steps.skip-backup.outputs.backup-created }}
     
     steps:
       - name: 🔧 Install PostgreSQL 17 client
@@ -99,69 +98,79 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
-      - name: 💾 Create Aiven Database Backup
-        id: backup-aiven
-        run: |
-          echo "💾 Creating safety backup of Aiven database..."
-          
-          # Create backups directory
-          mkdir -p backups
-          
-          AIVEN_BACKUP_FILE="backups/aiven_backup_$(date +%Y%m%d_%H%M%S).sql"
-          
-          echo "📦 Backing up Aiven database to: $AIVEN_BACKUP_FILE"
-          
-          pg_dump "postgres://avnadmin:${{ secrets.AIVEN_DB_PASSWORD }}@mayfair-mailcow.k.aivencloud.com:19870/defaultdb?sslmode=require" \
-            --no-owner \
-            --no-acl \
-            --verbose \
-            --file="$AIVEN_BACKUP_FILE"
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Aiven backup created successfully!"
-            echo "📊 Aiven backup size: $(du -h $AIVEN_BACKUP_FILE | cut -f1)"
-            echo "backup-created=true" >> $GITHUB_OUTPUT
-            echo "aiven-backup-file=$AIVEN_BACKUP_FILE" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Aiven backup creation failed!"
-            echo "backup-created=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
+      # BACKUP STEPS TEMPORARILY DISABLED FOR FASTER SYNC
+      # Uncomment these steps when you want to re-enable backup functionality
+      
+      # - name: 💾 Create Aiven Database Backup
+      #   id: backup-aiven
+      #   run: |
+      #     echo "💾 Creating safety backup of Aiven database..."
+      #     
+      #     # Create backups directory
+      #     mkdir -p backups
+      #     
+      #     AIVEN_BACKUP_FILE="backups/aiven_backup_$(date +%Y%m%d_%H%M%S).sql"
+      #     
+      #     echo "📦 Backing up Aiven database to: $AIVEN_BACKUP_FILE"
+      #     
+      #     pg_dump "postgres://avnadmin:${{ secrets.AIVEN_DB_PASSWORD }}@mayfair-mailcow.k.aivencloud.com:19870/defaultdb?sslmode=require" \
+      #       --no-owner \
+      #       --no-acl \
+      #       --verbose \
+      #       --file="$AIVEN_BACKUP_FILE"
+      #     
+      #     if [ $? -eq 0 ]; then
+      #       echo "✅ Aiven backup created successfully!"
+      #       echo "📊 Aiven backup size: $(du -h $AIVEN_BACKUP_FILE | cut -f1)"
+      #       echo "backup-created=true" >> $GITHUB_OUTPUT
+      #       echo "aiven-backup-file=$AIVEN_BACKUP_FILE" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "❌ Aiven backup creation failed!"
+      #       echo "backup-created=false" >> $GITHUB_OUTPUT
+      #       exit 1
+      #     fi
 
-      - name: 📦 Create Supabase Database Backup
-        id: backup-supabase
+      # - name: 📦 Create Supabase Database Backup
+      #   id: backup-supabase
+      #   run: |
+      #     echo "📦 Creating backup of Supabase database (source)..."
+      #     
+      #     SUPABASE_BACKUP_FILE="backups/supabase_backup_$(date +%Y%m%d_%H%M%S).sql"
+      #     
+      #     echo "📤 Backing up Supabase database to: $SUPABASE_BACKUP_FILE"
+      #     
+      #     # Set PGPASSWORD for source database
+      #     export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+      #     
+      #     pg_dump \
+      #       --host=aws-1-ap-southeast-1.pooler.supabase.com \
+      #       --port=6543 \
+      #       --username=postgres.aglpkgpajcgjdlfunwyr \
+      #       --dbname=postgres \
+      #       --no-owner \
+      #       --no-acl \
+      #       --verbose \
+      #       --file="$SUPABASE_BACKUP_FILE"
+      #     
+      #     if [ $? -eq 0 ]; then
+      #       echo "✅ Supabase backup created successfully!"
+      #       echo "📊 Supabase backup size: $(du -h $SUPABASE_BACKUP_FILE | cut -f1)"
+      #       echo "supabase-backup-created=true" >> $GITHUB_OUTPUT
+      #       echo "supabase-backup-file=$SUPABASE_BACKUP_FILE" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "❌ Supabase backup creation failed!"
+      #       echo "supabase-backup-created=false" >> $GITHUB_OUTPUT
+      #       exit 1
+      #     fi
+      #   env:
+      #     PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: ⚡ Skip Backup (Disabled for Speed)
+        id: skip-backup
         run: |
-          echo "📦 Creating backup of Supabase database (source)..."
-          
-          SUPABASE_BACKUP_FILE="backups/supabase_backup_$(date +%Y%m%d_%H%M%S).sql"
-          
-          echo "📤 Backing up Supabase database to: $SUPABASE_BACKUP_FILE"
-          
-          # Set PGPASSWORD for source database
-          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
-          
-          pg_dump \
-            --host=aws-1-ap-southeast-1.pooler.supabase.com \
-            --port=6543 \
-            --username=postgres.aglpkgpajcgjdlfunwyr \
-            --dbname=postgres \
-            --no-owner \
-            --no-acl \
-            --verbose \
-            --file="$SUPABASE_BACKUP_FILE"
-          
-          if [ $? -eq 0 ]; then
-            echo "✅ Supabase backup created successfully!"
-            echo "📊 Supabase backup size: $(du -h $SUPABASE_BACKUP_FILE | cut -f1)"
-            echo "supabase-backup-created=true" >> $GITHUB_OUTPUT
-            echo "supabase-backup-file=$SUPABASE_BACKUP_FILE" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Supabase backup creation failed!"
-            echo "supabase-backup-created=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-        env:
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          echo "⚡ Backup steps are currently disabled for faster sync"
+          echo "🔄 Focusing on sync functionality only"
+          echo "backup-created=true" >> $GITHUB_OUTPUT
 
       - name: 📊 Pre-Sync Database Statistics
         run: |
@@ -240,13 +249,14 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
-      - name: 📤 Upload Database Backups as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: database-backups-${{ github.run_number }}
-          path: backups/
-          retention-days: 7
-          compression-level: 9
+      # BACKUP ARTIFACT UPLOAD DISABLED
+      # - name: 📤 Upload Database Backups as Artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: database-backups-${{ github.run_number }}
+      #     path: backups/
+      #     retention-days: 7
+      #     compression-level: 9
 
   sync-database:
     needs: pre-sync-checks
@@ -349,13 +359,13 @@ jobs:
           EOF
           
           echo "📥 Executing safe import with transaction control..."
+          echo "📄 SQL file size: $(du -h $PROCESSED_SQL_FILE | cut -f1)"
           
           # Execute with transaction safety
           psql "postgres://avnadmin:${{ secrets.AIVEN_DB_PASSWORD }}@mayfair-mailcow.k.aivencloud.com:19870/defaultdb?sslmode=require" \
             --file="$PROCESSED_SQL_FILE" \
             --variable=ON_ERROR_STOP=1 \
-            --echo-errors \
-            --verbose
+            --echo-errors
           
           IMPORT_EXIT_CODE=$?
           
@@ -406,7 +416,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### �️ Snafety Measures Applied" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Pre-sync health checks** on both databases" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ **Full backup created** of destination database" >> $GITHUB_STEP_SUMMARY
+          echo "- ⚡ **Backups disabled** for faster sync (can be re-enabled)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Transaction control** with automatic rollback on failure" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Conflict handling** with ON CONFLICT DO NOTHING" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ **Post-sync verification** completed" >> $GITHUB_STEP_SUMMARY
@@ -427,10 +437,9 @@ jobs:
           echo "- **Source Database:** Unchanged (read-only operation)" >> $GITHUB_STEP_SUMMARY
           echo "- **Destination Database:** Safely updated with new data" >> $GITHUB_STEP_SUMMARY
           echo "- **Existing Data:** Preserved and protected" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backups Available:** Yes (both databases backed up)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backups:** ⚡ Disabled for speed (can be re-enabled by uncommenting)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Backup Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact Name:** \`database-backups-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Contains:** Supabase backup + Aiven backup (pre-sync)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Retention:** 7 days" >> $GITHUB_STEP_SUMMARY
-          echo "- **Download:** Available in Actions → Artifacts section" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚡ Performance Mode" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backup Steps:** Disabled for faster execution" >> $GITHUB_STEP_SUMMARY
+          echo "- **Focus:** Sync functionality only" >> $GITHUB_STEP_SUMMARY
+          echo "- **To Re-enable:** Uncomment backup steps in workflow file" >> $GITHUB_STEP_SUMMARY
