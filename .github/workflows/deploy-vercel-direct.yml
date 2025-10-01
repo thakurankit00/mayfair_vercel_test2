@@ -48,9 +48,8 @@ jobs:
             printf '%s\n' '{' \
               '  "version": 2,' \
               '  "builds": [' \
-              '    { "src": "backend/index.js", "use": "@vercel/node", "config": { "maxLambdaSize": "50mb" } }' \
+              '    { "src": "backend/index.js", "use": "@vercel/node", "config": { "maxLambdaSize": "50mb", "includeFiles": "frontend/build/**" } }' \
               '  ],' \
-              '  "functions": { "backend/index.js": { "includeFiles": "frontend/build/**" } },' \
               '  "routes": [' \
               '    { "src": "/api/(.*)", "dest": "backend/index.js" },' \
               '    { "src": "/(.*)", "dest": "backend/index.js" }' \
