@@ -119,10 +119,10 @@ jobs:
 
           echo "✅ Support files ensured"
 
-      - name: 🧩 Ensure backend postinstall to build frontend on Vercel
+      - name: 🧩 Ensure backend postinstall builds and copies frontend
         run: |
           if [ -f "backend/package.json" ]; then
-            node -e 'const fs=require("fs"); const p="backend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; if(!pkg.scripts.postinstall){ pkg.scripts.postinstall="cd ../frontend && npm install && npm run build:production"; fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Added postinstall to backend/package.json"); } else { console.log("postinstall already present"); }'
+            node -e 'const fs=require("fs"); const p="backend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; const buildProd="cd ../frontend && npm install && npm run build:production"; const copyGroup="(mkdir -p ../backend/public && cp -r ../frontend/build/* ../backend/public/) || true"; if(!pkg.scripts.postinstall){ pkg.scripts.postinstall=`${buildProd} && ${copyGroup}`; } else { if(!pkg.scripts.postinstall.includes("build:production")) pkg.scripts.postinstall = `${pkg.scripts.postinstall} && ${buildProd}`; if(!pkg.scripts.postinstall.includes("../backend/public")) pkg.scripts.postinstall = `${pkg.scripts.postinstall} && ${copyGroup}`; } fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Ensured postinstall builds and copies frontend to backend/public");'
           else
             echo "ℹ️ backend/package.json not found; skipping postinstall injection"
           fi

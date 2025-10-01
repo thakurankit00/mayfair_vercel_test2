@@ -109,13 +109,22 @@ try {
   });
 }
 
-// Serve React static files (if frontend build exists in this repo)
-const frontendBuild = path.join(__dirname, '../frontend/build');
-if (fs.existsSync(frontendBuild)) {
-  app.use(express.static(frontendBuild));
-  app.get('*', (req, res) => {
+// Serve React static files: look in multiple locations to be robust on Vercel
+const candidateBuilds = [
+  path.join(__dirname, 'public'), // copied build during postinstall
+  path.join(__dirname, '../frontend/build'), // monorepo relative path
+  path.join(process.cwd(), 'frontend', 'build') // cwd fallback
+];
+const staticRoot = candidateBuilds.find(p => {
+  try { return fs.existsSync(p); } catch (_) { return false; }
+});
+
+if (staticRoot) {
+  app.use(express.static(staticRoot));
+  // Only handle non-API routes here
+  app.get(/^\/(?!api\/).*/, (req, res) => {
     try {
-      res.sendFile(path.join(frontendBuild, 'index.html'));
+      res.sendFile(path.join(staticRoot, 'index.html'));
     } catch (error) {
       res.status(500).json({ success: false, error: { code: 'STATIC_FILE_ERROR', message: 'Unable to serve frontend files' } });
     }
@@ -133,7 +142,7 @@ if (fs.existsSync(frontendBuild)) {
       }
     });
   });
-  app.get('*', (req, res) => {
+  app.get(/^\/(?!api\/).*/, (req, res) => {
     res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Route not found. See /api/health' } });
   });
 }
