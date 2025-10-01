@@ -1,0 +1,230 @@
+name: Collect Vercel Deployment Logs
+
+run-name: "Collect Logs • ${{ github.event.inputs.environment }} • ${{ github.actor }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to collect logs from'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+          - both
+        default: 'dev'
+
+      include_build_logs:
+        description: 'Include build logs (can be large)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  collect-logs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 📦 Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: 🔗 Setup Vercel Authentication
+        run: |
+          echo "🔐 Setting up Vercel authentication..."
+          vercel --version
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 📋 Collect Latest Dev Environment Logs
+        if: ${{ github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'both' }}
+        run: |
+          echo "📤 Collecting logs from LATEST DEV deployment..."
+          
+          # Create logs directory
+          mkdir -p logs/dev
+          
+          echo "🔍 Getting latest dev deployment..."
+          
+          # Get latest preview deployment (dev environment)
+          LATEST_DEV_URL=$(vercel ls --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --json | \
+          jq -r '.deployments[] | select(.target == null or .target == "preview") | .url' | head -1)
+          
+          if [ -n "$LATEST_DEV_URL" ] && [ "$LATEST_DEV_URL" != "null" ]; then
+            echo "📥 Latest dev deployment: $LATEST_DEV_URL"
+            
+            # Save deployment URL for reference
+            echo "$LATEST_DEV_URL" > logs/dev/latest-deployment-url.txt
+            
+            # Get deployment info
+            echo "📊 Getting deployment information..."
+            vercel inspect "$LATEST_DEV_URL" --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} > logs/dev/deployment-info.json 2>/dev/null || echo "Could not get deployment info"
+            
+            # Get function logs if available
+            if [ "${{ github.event.inputs.include_build_logs }}" == "true" ]; then
+              echo "📜 Getting deployment logs..."
+              vercel logs "$LATEST_DEV_URL" --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} > logs/dev/deployment-logs.txt 2>/dev/null || echo "No logs available"
+            fi
+            
+            # Get deployment status and details
+            echo "🔍 Getting deployment status..."
+            vercel ls --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} | head -10 > logs/dev/recent-deployments.txt
+            
+            echo "✅ Latest dev deployment logs collected"
+          else
+            echo "❌ No dev deployments found"
+            echo "No dev deployments found" > logs/dev/no-deployments.txt
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 🌟 Collect Latest Prod Environment Logs
+        if: ${{ github.event.inputs.environment == 'prod' || github.event.inputs.environment == 'both' }}
+        run: |
+          echo "📥 Collecting logs from LATEST PROD deployment..."
+          
+          # Create logs directory
+          mkdir -p logs/prod
+          
+          echo "🔍 Getting latest prod deployment..."
+          
+          # Get latest production deployment
+          LATEST_PROD_URL=$(vercel ls --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} --json | \
+          jq -r '.deployments[] | select(.target == "production") | .url' | head -1)
+          
+          if [ -n "$LATEST_PROD_URL" ] && [ "$LATEST_PROD_URL" != "null" ]; then
+            echo "📥 Latest prod deployment: $LATEST_PROD_URL"
+            
+            # Save deployment URL for reference
+            echo "$LATEST_PROD_URL" > logs/prod/latest-deployment-url.txt
+            
+            # Get deployment info
+            echo "📊 Getting deployment information..."
+            vercel inspect "$LATEST_PROD_URL" --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} > logs/prod/deployment-info.json 2>/dev/null || echo "Could not get deployment info"
+            
+            # Get function logs if available
+            if [ "${{ github.event.inputs.include_build_logs }}" == "true" ]; then
+              echo "📜 Getting deployment logs..."
+              vercel logs "$LATEST_PROD_URL" --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} > logs/prod/deployment-logs.txt 2>/dev/null || echo "No logs available"
+            fi
+            
+            # Get deployment status and details
+            echo "🔍 Getting deployment status..."
+            vercel ls --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }} | head -10 > logs/prod/recent-deployments.txt
+            
+            echo "✅ Latest prod deployment logs collected"
+          else
+            echo "❌ No prod deployments found"
+            echo "No prod deployments found" > logs/prod/no-deployments.txt
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: 📊 Generate Log Summary
+        run: |
+          echo "📊 Generating log collection summary..."
+          
+          # Create summary file
+          cat > logs/collection-summary.md << EOF
+          # Vercel Logs Collection Summary
+          
+          **Collection Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          **Requested by:** @${{ github.actor }}
+          **Environment(s):** ${{ github.event.inputs.environment }}
+          **Target:** Latest deployment only
+          **Include Build Logs:** ${{ github.event.inputs.include_build_logs }}
+          
+          ## Collected Files
+          
+          EOF
+          
+          # Add file listing to summary
+          if [ -d "logs/dev" ]; then
+            echo "### Dev Environment Logs" >> logs/collection-summary.md
+            echo "\`\`\`" >> logs/collection-summary.md
+            ls -la logs/dev/ >> logs/collection-summary.md
+            echo "\`\`\`" >> logs/collection-summary.md
+            echo "" >> logs/collection-summary.md
+          fi
+          
+          if [ -d "logs/prod" ]; then
+            echo "### Prod Environment Logs" >> logs/collection-summary.md
+            echo "\`\`\`" >> logs/collection-summary.md
+            ls -la logs/prod/ >> logs/collection-summary.md
+            echo "\`\`\`" >> logs/collection-summary.md
+            echo "" >> logs/collection-summary.md
+          fi
+          
+          # Show total size
+          echo "### Total Size" >> logs/collection-summary.md
+          echo "\`\`\`" >> logs/collection-summary.md
+          du -sh logs/ >> logs/collection-summary.md
+          echo "\`\`\`" >> logs/collection-summary.md
+          
+          echo "📋 Summary generated at logs/collection-summary.md"
+
+      - name: 📦 Upload Logs as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vercel-logs-${{ github.event.inputs.environment }}-${{ github.run_number }}
+          path: logs/
+          retention-days: 30
+          compression-level: 6
+
+      - name: 📝 Create Collection Summary
+        run: |
+          echo "## 📋 Vercel Logs Collection Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Collection Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment(s):** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** Latest deployment only" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Logs:** ${{ github.event.inputs.include_build_logs == 'true' && 'Included' || 'Excluded' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name:** \`vercel-logs-${{ github.event.inputs.environment }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Collected Files" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "logs/dev" ]; then
+            echo "**Dev Environment (Latest):**" >> $GITHUB_STEP_SUMMARY
+            echo "- Deployment URL: \`latest-deployment-url.txt\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Deployment info: \`deployment-info.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Recent deployments: \`recent-deployments.txt\`" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event.inputs.include_build_logs }}" == "true" ]; then
+              echo "- Deployment logs: \`deployment-logs.txt\`" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -d "logs/prod" ]; then
+            echo "**Prod Environment (Latest):**" >> $GITHUB_STEP_SUMMARY
+            echo "- Deployment URL: \`latest-deployment-url.txt\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Deployment info: \`deployment-info.json\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Recent deployments: \`recent-deployments.txt\`" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event.inputs.include_build_logs }}" == "true" ]; then
+              echo "- Deployment logs: \`deployment-logs.txt\`" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "### 📋 Usage Instructions" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to the **Actions** tab" >> $GITHUB_STEP_SUMMARY
+          echo "2. Click on this workflow run" >> $GITHUB_STEP_SUMMARY
+          echo "3. Scroll down to **Artifacts** section" >> $GITHUB_STEP_SUMMARY
+          echo "4. Download \`vercel-logs-${{ github.event.inputs.environment }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Collection Stats" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Size:** $(du -sh logs/ | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Collected:** $(find logs/ -type f | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retention:** 30 days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY

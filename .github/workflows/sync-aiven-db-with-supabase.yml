@@ -32,25 +32,39 @@ jobs:
     outputs:
       source-healthy: ${{ steps.health-check.outputs.source-healthy }}
       destination-healthy: ${{ steps.health-check.outputs.destination-healthy }}
-      backup-created: ${{ steps.backup.outputs.backup-created }}
+      backup-created: ${{ steps.backup-aiven.outputs.backup-created }}
+      supabase-backup-created: ${{ steps.backup-supabase.outputs.supabase-backup-created }}
     
     steps:
       - name: 🔧 Install PostgreSQL 17 client
         run: |
           echo "📦 Installing PostgreSQL 17 client tools..."
           
-          # Add PostgreSQL official APT repository
-          sudo apt-get update
-          sudo apt-get install -y wget ca-certificates
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          # Remove any existing PostgreSQL packages to avoid conflicts
+          sudo apt-get remove -y postgresql-client-* postgresql-* || true
           
-          # Update package list and install PostgreSQL 17 client
+          # Add PostgreSQL official APT repository with new method
+          sudo apt-get update
+          sudo apt-get install -y wget ca-certificates gnupg lsb-release
+          
+          # Add GPG key using new method
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          
+          # Add repository with signed-by
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          
+          # Update package list and install PostgreSQL 17 client specifically
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
           
+          # Ensure PostgreSQL 17 tools are in PATH and create symlinks
+          sudo ln -sf /usr/lib/postgresql/17/bin/psql /usr/local/bin/psql
+          sudo ln -sf /usr/lib/postgresql/17/bin/pg_dump /usr/local/bin/pg_dump
+          
+          # Verify installation
           echo "✅ PostgreSQL 17 client installed"
           psql --version
+          pg_dump --version
 
       - name: 🏥 Health Check Both Databases
         id: health-check
@@ -86,30 +100,68 @@ jobs:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: 💾 Create Aiven Database Backup
-        id: backup
+        id: backup-aiven
         run: |
           echo "💾 Creating safety backup of Aiven database..."
           
-          BACKUP_FILE="/tmp/aiven_backup_$(date +%Y%m%d_%H%M%S).sql"
+          # Create backups directory
+          mkdir -p backups
           
-          echo "📦 Backing up Aiven database to: $BACKUP_FILE"
+          AIVEN_BACKUP_FILE="backups/aiven_backup_$(date +%Y%m%d_%H%M%S).sql"
+          
+          echo "📦 Backing up Aiven database to: $AIVEN_BACKUP_FILE"
           
           pg_dump "postgres://avnadmin:${{ secrets.AIVEN_DB_PASSWORD }}@mayfair-mailcow.k.aivencloud.com:19870/defaultdb?sslmode=require" \
             --no-owner \
             --no-acl \
             --verbose \
-            --file="$BACKUP_FILE"
+            --file="$AIVEN_BACKUP_FILE"
           
           if [ $? -eq 0 ]; then
-            echo "✅ Backup created successfully!"
-            echo "📊 Backup size: $(du -h $BACKUP_FILE | cut -f1)"
+            echo "✅ Aiven backup created successfully!"
+            echo "📊 Aiven backup size: $(du -h $AIVEN_BACKUP_FILE | cut -f1)"
             echo "backup-created=true" >> $GITHUB_OUTPUT
-            echo "backup-file=$BACKUP_FILE" >> $GITHUB_OUTPUT
+            echo "aiven-backup-file=$AIVEN_BACKUP_FILE" >> $GITHUB_OUTPUT
           else
-            echo "❌ Backup creation failed!"
+            echo "❌ Aiven backup creation failed!"
             echo "backup-created=false" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+      - name: 📦 Create Supabase Database Backup
+        id: backup-supabase
+        run: |
+          echo "📦 Creating backup of Supabase database (source)..."
+          
+          SUPABASE_BACKUP_FILE="backups/supabase_backup_$(date +%Y%m%d_%H%M%S).sql"
+          
+          echo "📤 Backing up Supabase database to: $SUPABASE_BACKUP_FILE"
+          
+          # Set PGPASSWORD for source database
+          export PGPASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+          
+          pg_dump \
+            --host=aws-1-ap-southeast-1.pooler.supabase.com \
+            --port=6543 \
+            --username=postgres.aglpkgpajcgjdlfunwyr \
+            --dbname=postgres \
+            --no-owner \
+            --no-acl \
+            --verbose \
+            --file="$SUPABASE_BACKUP_FILE"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Supabase backup created successfully!"
+            echo "📊 Supabase backup size: $(du -h $SUPABASE_BACKUP_FILE | cut -f1)"
+            echo "supabase-backup-created=true" >> $GITHUB_OUTPUT
+            echo "supabase-backup-file=$SUPABASE_BACKUP_FILE" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Supabase backup creation failed!"
+            echo "supabase-backup-created=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: 📊 Pre-Sync Database Statistics
         run: |
@@ -148,6 +200,14 @@ jobs:
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
+      - name: 📤 Upload Database Backups as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backups-${{ github.run_number }}
+          path: backups/
+          retention-days: 7
+          compression-level: 9
+
   sync-database:
     needs: pre-sync-checks
     runs-on: ubuntu-latest
@@ -158,18 +218,31 @@ jobs:
         run: |
           echo "📦 Installing PostgreSQL 17 client tools..."
           
-          # Add PostgreSQL official APT repository
-          sudo apt-get update
-          sudo apt-get install -y wget ca-certificates
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          # Remove any existing PostgreSQL packages to avoid conflicts
+          sudo apt-get remove -y postgresql-client-* postgresql-* || true
           
-          # Update package list and install PostgreSQL 17 client
+          # Add PostgreSQL official APT repository with new method
+          sudo apt-get update
+          sudo apt-get install -y wget ca-certificates gnupg lsb-release
+          
+          # Add GPG key using new method
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          
+          # Add repository with signed-by
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          
+          # Update package list and install PostgreSQL 17 client specifically
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
           
+          # Ensure PostgreSQL 17 tools are in PATH and create symlinks
+          sudo ln -sf /usr/lib/postgresql/17/bin/psql /usr/local/bin/psql
+          sudo ln -sf /usr/lib/postgresql/17/bin/pg_dump /usr/local/bin/pg_dump
+          
+          # Verify installation
           echo "✅ PostgreSQL 17 client installed"
           psql --version
+          pg_dump --version
 
       - name: 🔄 Safe Database Sync with Transaction Control
         id: sync-operation
@@ -314,4 +387,10 @@ jobs:
           echo "- **Source Database:** Unchanged (read-only operation)" >> $GITHUB_STEP_SUMMARY
           echo "- **Destination Database:** Safely updated with new data" >> $GITHUB_STEP_SUMMARY
           echo "- **Existing Data:** Preserved and protected" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backup Available:** Yes (created before sync)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backups Available:** Yes (both databases backed up)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Backup Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name:** \`database-backups-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Contains:** Supabase backup + Aiven backup (pre-sync)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Retention:** 7 days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Download:** Available in Actions → Artifacts section" >> $GITHUB_STEP_SUMMARY
