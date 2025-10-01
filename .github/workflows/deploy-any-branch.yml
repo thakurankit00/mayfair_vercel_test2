@@ -466,11 +466,11 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Deploy to ${{ upper(matrix.env) }} Environment
+      - name: Deploy to Environment
         id: deploy
         working-directory: ./target-branch
         run: |
-          echo "Deploying to ${{ upper(matrix.env) }}..."
+          echo "Deploying to ${{ matrix.env }}..."
           if [ "${{ matrix.env }}" == "prod" ]; then
             FLAGS="--prod"
           else
@@ -482,9 +482,11 @@ jobs:
           else
             CUSTOM_URL="https://prod.mayfairmandi.com"
           fi
+          DISPLAY_ENV=$(if [ "${{ matrix.env }}" = "dev" ]; then echo "Dev"; else echo "Prod"; fi)
 
           echo "deploy_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
           echo "custom_url=$CUSTOM_URL" >> $GITHUB_OUTPUT
+          echo "display_env=$DISPLAY_ENV" >> $GITHUB_OUTPUT
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -494,17 +496,17 @@ jobs:
         working-directory: ./target-branch
         run: |
           echo "Fetching logs from Vercel deployment..."
-          vercel logs ${{ steps.deploy.outputs.deploy_url }}
+          vercel logs ${{ steps.deploy.outputs.deploy_url }} --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Create ${{ upper(matrix.env) }} Deploy Summary
+      - name: Create Deploy Summary
         run: |
-          echo "## 🚀 ${{ matrix.env == 'dev' && 'Dev' || 'Prod' }} Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 ${{ steps.deploy.outputs.display_env }} Deploy Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**${{ upper(matrix.env) }} URL:** ${{ steps.deploy.outputs.custom_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**${{ steps.deploy.outputs.display_env }} URL:** ${{ steps.deploy.outputs.custom_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Vercel URL:** ${{ steps.deploy.outputs.deploy_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
