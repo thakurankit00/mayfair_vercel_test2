@@ -9,6 +9,7 @@ const {
   updateRoomType,
   deleteRoomType,
   bulkUpdatePrices,
+  getRooms,
   getOccupiedRooms,
   getRoomById,
   uploadRoomImages,
@@ -31,6 +32,7 @@ router.get('/types/:id', getRoomTypeById);
 
 // Room service routes - authentication required
 router.get('/occupied', authenticateToken, getOccupiedRooms);
+router.get('/list', authenticateToken, getRooms);
 router.get('/:id', authenticateToken, getRoomById);
 
 // Protected routes - Admin/Manager only

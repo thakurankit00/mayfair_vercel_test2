@@ -15,6 +15,9 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
     location: "indoor",
     is_active: true,
   });
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Load item into formData when opening modal
   useEffect(() => {
@@ -25,6 +28,8 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
         location: item.location || "indoor",
         is_active: item.is_active !== undefined ? item.is_active : true,
       });
+      setPhotoPreview(item.photo_url || null);
+      setSelectedPhoto(null);
       setError("");
       setValidationErrors({});
     }
@@ -82,6 +87,40 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
     }
   };
 
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file');
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image file size must be less than 5MB');
+        return;
+      }
+
+      setSelectedPhoto(file);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPhotoPreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+
+      // Clear any previous errors
+      setError('');
+    }
+  };
+
+  const removePhoto = () => {
+    setSelectedPhoto(null);
+    setPhotoPreview(item?.photo_url || null);
+  };
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -110,7 +149,26 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
         is_active: Boolean(formData.is_active)
       };
 
-      const response = await restaurantTableApi.updateTable(item.id, updateData);
+      let response;
+
+      // Handle photo upload if a new photo is selected
+      if (selectedPhoto) {
+        setUploadingPhoto(true);
+        const formDataWithPhoto = new FormData();
+
+        // Add all form fields
+        Object.keys(updateData).forEach(key => {
+          formDataWithPhoto.append(key, updateData[key]);
+        });
+
+        // Add photo
+        formDataWithPhoto.append('photo', selectedPhoto);
+
+        response = await restaurantTableApi.updateTableWithPhoto(item.id, formDataWithPhoto);
+      } else {
+        response = await restaurantTableApi.updateTable(item.id, updateData);
+      }
+
       console.log("Update response:", response);
 
       // Handle successful update
@@ -127,14 +185,26 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
 
       // Handle duplicate table error specifically
       if (err.response?.status === 409 || err.response?.data?.error?.code === 'DUPLICATE_TABLE') {
-        const errorMessage = `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
-        setValidationErrors({ table_number: errorMessage });
+        const errorData = err.response.data?.error;
+        const existingTableDetails = errorData?.details?.existing_table;
+
+        // Use the server's error message if available, otherwise fallback to default
+        let errorMessage = errorData?.message || `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
+
+        // Create detailed validation error message
+        let detailedMessage = errorMessage;
+        if (existingTableDetails) {
+          detailedMessage += ` (Existing table: ${existingTableDetails.capacity} seats, ${existingTableDetails.location} location, created ${new Date(existingTableDetails.created_at).toLocaleDateString()})`;
+        }
+
+        setValidationErrors({ table_number: detailedMessage });
         setError(errorMessage);
       } else {
         setError(err.response?.data?.message || err.message || "Failed to update table");
       }
     } finally {
       setIsSubmitting(false);
+      setUploadingPhoto(false);
     }
   };
 
@@ -292,6 +362,54 @@ const EditTableModal = ({ item, onEdit, onDelete, restaurants = [], existingTabl
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
+              </div>
+
+              {/* Photo Upload Section */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Table Photo</label>
+
+                {/* Current Photo Preview */}
+                {photoPreview && (
+                  <div className="mb-3">
+                    <img
+                      src={photoPreview}
+                      alt="Table preview"
+                      className="w-full h-32 object-cover rounded-lg border"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                    {selectedPhoto && (
+                      <button
+                        type="button"
+                        onClick={removePhoto}
+                        className="mt-2 text-sm text-red-600 hover:text-red-800"
+                        disabled={isSubmitting}
+                      >
+                        Remove new photo
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* File Input */}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isSubmitting || uploadingPhoto}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Supported formats: JPG, PNG, WebP. Max size: 5MB
+                </p>
+
+                {uploadingPhoto && (
+                  <div className="mt-2 text-sm text-blue-600 flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    Uploading photo...
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end space-x-3 mt-6">

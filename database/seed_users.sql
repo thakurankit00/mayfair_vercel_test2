@@ -114,4 +114,4 @@ INSERT INTO users (
 \echo '  Chef: anna.chef@mayfairhotel.com'
 \echo '  Waiter: carlos.waiter@mayfairhotel.com'
 \echo '  Bartender: lisa.bartender@mayfairhotel.com'
-\echo '  Admin: Amit.admin@mayfairhotel.com'
+\echo '  Admin: amit.admin@mayfairhotel.com'

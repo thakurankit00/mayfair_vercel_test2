@@ -13,7 +13,7 @@ module.exports = {
     },
     pool: {
       min: 1,
-      max: 5, // Reduced for Supabase connection limits
+      max: 20, // Reduced for Supabase connection limits
       acquireTimeoutMillis: 30000,
       createTimeoutMillis: 30000,
       destroyTimeoutMillis: 5000,

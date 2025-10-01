@@ -1,0 +1,13 @@
+🧪 TESTING ROOM SERVICE ORDER CREATION
+======================================
+✅ JWT token generated for waiter
+
+1. Getting occupied rooms:
+❌ Test failed: {
+  "success": false,
+  "error": {
+    "code": "SERVER_ERROR",
+    "message": "Internal server error"
+  }
+}
+❌ Backend error: Internal server error

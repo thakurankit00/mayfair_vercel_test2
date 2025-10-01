@@ -224,7 +224,7 @@ const getTables = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get tables error: - restaurantController.js:190', error);
+    console.error('Get tables error: - restaurantController.js:227', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -243,7 +243,7 @@ const createTable = async (req, res) => {
   try {
     const { restaurantId } = req.params;
     const { table_number, capacity, location } = req.body;
-    
+
     // Validation
     if (!table_number || !capacity || !location) {
       return res.status(400).json({
@@ -254,7 +254,7 @@ const createTable = async (req, res) => {
         }
       });
     }
-    
+
     // Verify restaurant exists
     const restaurant = await Restaurant.query().findById(restaurantId);
     if (!restaurant || !restaurant.is_active) {
@@ -266,7 +266,7 @@ const createTable = async (req, res) => {
         }
       });
     }
-    
+
     if (!['indoor', 'outdoor', 'sky_bar'].includes(location)) {
       return res.status(400).json({
         success: false,
@@ -276,61 +276,129 @@ const createTable = async (req, res) => {
         }
       });
     }
-    
-    // Check if table number exists within this restaurant
-    const existingTable = await db('restaurant_tables')
-      .where('table_number', table_number)
-      .where('restaurant_id', restaurantId)
-      .where('is_active', true)
-      .first();
-    
-    if (existingTable) {
-      return res.status(409).json({
-        success: false,
-        error: {
+
+    // Use a database transaction to prevent race conditions
+    const result = await db.transaction(async (trx) => {
+      // Check if table number exists within this restaurant (with transaction lock)
+      const existingTable = await trx('restaurant_tables')
+        .where('table_number', table_number)
+        .where('restaurant_id', restaurantId)
+        .where('is_active', true)
+        .first();
+
+      if (existingTable) {
+        // Return detailed information about the existing table
+        const conflictDetails = {
+          existing_table: {
+            id: existingTable.id,
+            table_number: existingTable.table_number,
+            capacity: existingTable.capacity,
+            location: existingTable.location,
+            created_at: existingTable.created_at
+          }
+        };
+
+        throw {
+          isConflict: true,
           code: 'DUPLICATE_TABLE',
-          message: 'Table with this number already exists'
-        }
-      });
-    }
-    
-    const tableId = uuidv4();
-    const newTable = await db('restaurant_tables')
-      .insert({
-        id: tableId,
-        table_number,
-        capacity: parseInt(capacity),
-        location,
-        restaurant_id: restaurantId,
-        is_active: true,
-        created_at: new Date(),
-        updated_at: new Date()
-      })
-      .returning('*');
-    
+          message: `Table ${table_number} already exists in this restaurant. Please choose a different table number.`,
+          details: conflictDetails
+        };
+      }
+
+      const tableId = uuidv4();
+      const newTable = await trx('restaurant_tables')
+        .insert({
+          id: tableId,
+          table_number,
+          capacity: parseInt(capacity),
+          location,
+          restaurant_id: restaurantId,
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date()
+        })
+        .returning('*');
+
+      return newTable[0];
+    });
+
     // Add booking status (new tables are always available)
     const tableWithStatus = {
-      ...newTable[0],
+      ...result,
       booking_status: 'available'
     };
-    
+
     // Emit socket event for new table creation
     const io = req.app.get('io');
     if (io) {
-      io.emit('table_created', { 
+      io.emit('table_created', {
         table: tableWithStatus,
         restaurant_id: restaurantId,
         timestamp: new Date()
       });
     }
-    
+
     return res.status(201).json({
       success: true,
       data: { table: tableWithStatus },
       message: 'Restaurant table created successfully'
     });
   } catch (error) {
-    console.error('Create table error: - restaurantController.js:296', error);
+    console.error('Create table error: - restaurantController.js:348', error);
+
+    // Handle our custom conflict error
+    if (error.isConflict) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        }
+      });
+    }
+
+    // Handle database constraint violations
+    if (error.code === '23505' || error.constraint === 'restaurant_tables_restaurant_table_unique') {
+      // Fetch the existing table details for better error response
+      try {
+        const existingTable = await db('restaurant_tables')
+          .where('table_number', req.body.table_number)
+          .where('restaurant_id', req.params.restaurantId)
+          .where('is_active', true)
+          .first();
+
+        const conflictDetails = existingTable ? {
+          existing_table: {
+            id: existingTable.id,
+            table_number: existingTable.table_number,
+            capacity: existingTable.capacity,
+            location: existingTable.location,
+            created_at: existingTable.created_at
+          }
+        } : {};
+
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_TABLE',
+            message: `Table ${req.body.table_number} already exists in this restaurant. Please choose a different table number.`,
+            details: conflictDetails
+          }
+        });
+      } catch (fetchError) {
+        console.error('Error fetching existing table details: - restaurantController.js:391', fetchError);
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_TABLE',
+            message: `Table ${req.body.table_number} already exists in this restaurant. Please choose a different table number.`
+          }
+        });
+      }
+    }
+
     return res.status(500).json({
       success: false,
       error: {
@@ -349,12 +417,12 @@ const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
     const { table_number, capacity, location } = req.body;
-    
+
     const existingTable = await db('restaurant_tables')
       .where('id', id)
       .where('is_active', true)
       .first();
-    
+
     if (!existingTable) {
       return res.status(404).json({
         success: false,
@@ -364,37 +432,52 @@ const updateTable = async (req, res) => {
         }
       });
     }
-    
-    // Check for duplicate table numbers within the same restaurant (excluding current table)
-    if (table_number && table_number !== existingTable.table_number) {
-      const duplicate = await db('restaurant_tables')
-        .where('table_number', table_number)
-        .where('restaurant_id', existingTable.restaurant_id)
-        .where('is_active', true)
-        .where('id', '!=', id)
-        .first();
 
-      if (duplicate) {
-        return res.status(409).json({
-          success: false,
-          error: {
+    // Use a database transaction to prevent race conditions
+    const result = await db.transaction(async (trx) => {
+      // Check for duplicate table numbers within the same restaurant (excluding current table)
+      if (table_number && table_number !== existingTable.table_number) {
+        const duplicate = await trx('restaurant_tables')
+          .where('table_number', table_number)
+          .where('restaurant_id', existingTable.restaurant_id)
+          .where('is_active', true)
+          .where('id', '!=', id)
+          .first();
+
+        if (duplicate) {
+          // Return detailed information about the conflicting table
+          const conflictDetails = {
+            existing_table: {
+              id: duplicate.id,
+              table_number: duplicate.table_number,
+              capacity: duplicate.capacity,
+              location: duplicate.location,
+              created_at: duplicate.created_at
+            }
+          };
+
+          throw {
+            isConflict: true,
             code: 'DUPLICATE_TABLE',
-            message: 'Table with this number already exists'
-          }
-        });
+            message: `Table ${table_number} already exists in this restaurant. Please choose a different table number.`,
+            details: conflictDetails
+          };
+        }
       }
-    }
-    
-    const updateData = { updated_at: new Date() };
-    if (table_number) updateData.table_number = table_number;
-    if (capacity) updateData.capacity = parseInt(capacity);
-    if (location) updateData.location = location;
-    
-    const updatedTable = await db('restaurant_tables')
-      .where('id', id)
-      .update(updateData)
-      .returning('*');
-    
+
+      const updateData = { updated_at: new Date() };
+      if (table_number) updateData.table_number = table_number;
+      if (capacity) updateData.capacity = parseInt(capacity);
+      if (location) updateData.location = location;
+
+      const updatedTable = await trx('restaurant_tables')
+        .where('id', id)
+        .update(updateData)
+        .returning('*');
+
+      return updatedTable[0];
+    });
+
     // Add current booking status
     const today = new Date().toISOString().split('T')[0];
     const reservation = await db('table_reservations')
@@ -402,19 +485,73 @@ const updateTable = async (req, res) => {
       .where('reservation_date', today)
       .whereIn('status', ['confirmed', 'seated'])
       .first();
-    
+
     const tableWithStatus = {
-      ...updatedTable[0],
+      ...result,
       booking_status: reservation ? 'booked' : 'available'
     };
-    
+
     return res.status(200).json({
       success: true,
       data: { table: tableWithStatus },
       message: 'Restaurant table updated successfully'
     });
   } catch (error) {
-    console.error('Update table error: - restaurantController.js:379', error);
+    console.error('Update table error: - restaurantController.js:500', error);
+
+    // Handle our custom conflict error
+    if (error.isConflict) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        }
+      });
+    }
+
+    // Handle database constraint violations
+    if (error.code === '23505' || error.constraint === 'restaurant_tables_restaurant_table_unique') {
+      // Fetch the existing table details for better error response
+      try {
+        const conflictingTable = await db('restaurant_tables')
+          .where('table_number', req.body.table_number)
+          .where('restaurant_id', existingTable?.restaurant_id)
+          .where('is_active', true)
+          .where('id', '!=', req.params.id)
+          .first();
+
+        const conflictDetails = conflictingTable ? {
+          existing_table: {
+            id: conflictingTable.id,
+            table_number: conflictingTable.table_number,
+            capacity: conflictingTable.capacity,
+            location: conflictingTable.location,
+            created_at: conflictingTable.created_at
+          }
+        } : {};
+
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_TABLE',
+            message: `Table ${req.body.table_number} already exists in this restaurant. Please choose a different table number.`,
+            details: conflictDetails
+          }
+        });
+      } catch (fetchError) {
+        console.error('Error fetching existing table details: - restaurantController.js:544', fetchError);
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_TABLE',
+            message: `Table ${req.body.table_number} already exists in this restaurant. Please choose a different table number.`
+          }
+        });
+      }
+    }
+
     return res.status(500).json({
       success: false,
       error: {
@@ -482,7 +619,7 @@ const deleteTable = async (req, res) => {
       message: 'Restaurant table deleted successfully'
     });
   } catch (error) {
-    console.error('Delete table error: - restaurantController.js:447', error);
+    console.error('Delete table error: - restaurantController.js:622', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -530,7 +667,7 @@ const getMenuCategories = async (req, res) => {
       data: { categories }
     });
   } catch (error) {
-    console.error('Get menu categories error: - restaurantController.js:493', error);
+    console.error('Get menu categories error: - restaurantController.js:670', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -603,7 +740,7 @@ const createMenuCategory = async (req, res) => {
       message: 'Menu category created successfully'
     });
   } catch (error) {
-    console.error('Create menu category error: - restaurantController.js:566', error);
+    console.error('Create menu category error: - restaurantController.js:743', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -671,7 +808,7 @@ const getMenu = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get menu error: - restaurantController.js:632', error);
+    console.error('Get menu error: - restaurantController.js:811', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -759,7 +896,7 @@ const createMenuItem = async (req, res) => {
       message: 'Menu item created successfully'
     });
   } catch (error) {
-    console.error('Create menu item error: - restaurantController.js:720', error);
+    console.error('Create menu item error: - restaurantController.js:899', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -822,7 +959,7 @@ const updateMenuItem = async (req, res) => {
       message: 'Menu item updated successfully'
     });
   } catch (error) {
-    console.error('Update menu item error: - restaurantController.js:783', error);
+    console.error('Update menu item error: - restaurantController.js:962', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -869,7 +1006,7 @@ const deleteMenuItem = async (req, res) => {
       message: 'Menu item deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu item error: - restaurantController.js:830', error);
+    console.error('Delete menu item error: - restaurantController.js:1009', error);
     return res.status(500).json({
       success: false,
       error: {
@@ -933,7 +1070,7 @@ const deleteMenuCategory = async (req, res) => {
       message: 'Menu category deleted successfully'
     });
   } catch (error) {
-    console.error('Delete menu category error: - restaurantController.js:894', error);
+    console.error('Delete menu category error: - restaurantController.js:1073', error);
     return res.status(500).json({
       success: false,
       error: {

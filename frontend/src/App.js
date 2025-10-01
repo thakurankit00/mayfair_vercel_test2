@@ -16,7 +16,18 @@ import OrdersPage from './components/orders/OrdersPage';
 import BookingCalendar from './components/hotel/BookingCalendar';
 import NotificationContainer from './components/common/NotificationToast';
 import PopupNotification from './components/common/PopupNotification';
+import RouteChangeHandler from './components/common/RouteChangeHandler';
 import { useSocket } from './contexts/SocketContext';
+import { Toaster } from 'react-hot-toast';
+
+// Report components - Using comprehensive versions
+import ReservationReportComplete from './components/Report/ReservationReportComplete';
+import FrontOfficeReportComplete from './components/Report/FrontOfficeReportComplete';
+import BackOfficeReportComplete from './components/Report/BackOfficeReportComplete';
+import AuditReportComplete from './components/Report/AuditReportComplete';
+import StatisticalReportComplete from './components/Report/StatisticalReportComplete';
+import GraphsChartsReportComplete from './components/Report/GraphsChartsReportComplete';
+import ReportsIntegrationTest from './components/Report/ReportsIntegrationTest';
 
 // Notification wrapper component
 const AppWithNotifications = ({ children }) => {
@@ -56,7 +67,10 @@ const App = () => {
         <SocketProvider>
           <AppWithNotifications>
             <Router>
+              {/* Handle route changes for cross-interface notification persistence */}
+              <RouteChangeHandler />
               <div className="App">
+              <Toaster position="top-center" reverseOrder={false} />
               <Routes>
               {/* Public routes */}
               <Route 
@@ -162,15 +176,94 @@ const App = () => {
               />
 
               {/* Reports routes */}
-              <Route 
-                path="/reports" 
+              <Route
+                path="/reports"
                 element={
                   <ProtectedRoute roles={['manager', 'admin']}>
                     <Layout>
                       <PlaceholderPage title="Reports & Analytics" />
                     </Layout>
                   </ProtectedRoute>
-                } 
+                }
+              />
+
+              {/* Individual Report routes */}
+              <Route
+                path="/reports/reservation"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <ReservationReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reports/front-office"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <FrontOfficeReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reports/back-office"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <BackOfficeReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reports/audit"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <AuditReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reports/statistical"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <StatisticalReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/reports/charts"
+                element={
+                  <ProtectedRoute roles={['manager', 'admin']}>
+                    <Layout>
+                      <GraphsChartsReportComplete />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Reports Integration Test Route */}
+              <Route
+                path="/reports/test"
+                element={
+                  <ProtectedRoute roles={['admin']}>
+                    <Layout>
+                      <ReportsIntegrationTest />
+                    </Layout>
+                  </ProtectedRoute>
+                }
               />
 
               {/* User management routes */}

@@ -334,6 +334,45 @@ export const roomApi = {
   async cancelBooking(id, reason = null) {
     const response = await api.patch(`/bookings/${id}/cancel`, { reason });
     return response.data;
+  },
+
+  // Get occupied rooms for room service
+  async getOccupiedRooms() {
+    try {
+      console.log('🏨 [API] Fetching occupied rooms...');
+      const token = localStorage.getItem('token');
+      console.log('🏨 [API] Auth token present:', !!token);
+
+      const response = await api.get('/rooms/occupied');
+      console.log('🏨 [API] Occupied rooms response:', response);
+
+      // Handle different response formats from backend
+      if (response.success && response.rooms) {
+        return {
+          rooms: response.rooms,
+          success: true
+        };
+      } else if (response.occupiedRooms) {
+        return {
+          rooms: response.occupiedRooms,
+          success: true
+        };
+      } else {
+        return {
+          rooms: response.rooms || response.data?.rooms || [],
+          success: true
+        };
+      }
+    } catch (error) {
+      console.error('❌ [API] Failed to fetch occupied rooms:', error);
+      console.error('❌ [API] Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
+      throw new Error(error.response?.data?.message || error.message || 'Failed to fetch occupied rooms');
+    }
   }
 };
 

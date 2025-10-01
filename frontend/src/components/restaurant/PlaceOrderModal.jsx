@@ -158,9 +158,12 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
           throw new Error('Please enter customer name');
         }
 
-        // Prepare order data
-        const orderData = {
-          ...orderForm,
+        // Prepare order data - only include relevant fields based on order type
+        const baseOrderData = {
+          order_type: orderForm.order_type,
+          customer_name: orderForm.customer_name,
+          customer_phone: orderForm.customer_phone,
+          special_instructions: orderForm.special_instructions,
           restaurant_id: selectedRestaurant,
           items: selectedItems.map(item => ({
             menu_item_id: item.id,
@@ -172,10 +175,18 @@ const PlaceOrderModal = ({ onClose, onSave, selectedRestaurant, restaurants, use
           estimated_time: Math.max(...selectedItems.map(item => item.preparation_time || 0))
         };
 
-        // Remove table_id for takeaway orders
-        if (orderForm.order_type === 'takeaway') {
-          delete orderData.table_id;
+        // Add order-type specific fields only if they have valid values
+        if (orderForm.order_type === 'dine_in' && orderForm.table_id && orderForm.table_id !== '') {
+          baseOrderData.table_id = orderForm.table_id;
         }
+
+        if (orderForm.order_type === 'room_service' && orderForm.room_booking_id && orderForm.room_booking_id !== '') {
+          baseOrderData.room_booking_id = orderForm.room_booking_id;
+        }
+
+
+
+        const orderData = baseOrderData;
 
         // Create the order
         await restaurantOrderApi.createOrder(orderData);

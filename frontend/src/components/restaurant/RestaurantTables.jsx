@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { restaurantTableApi, restaurantReservationApi } from '../../services/restaurantApi';
 import AddTableForm from './AddTableForm';
 import EditTableModal from './EditTableModal';
+import EditTableForm from './EditTableForm';
 import ReservationModal from './ReservationModal';
 import ReservationDetailsModal from './ReservationDetailsModal';
 import TableFloorLayout from './TableFloorLayout';
@@ -20,6 +21,7 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
   const [socket, setSocket] = useState(null);
   const [viewMode, setViewMode] = useState('floor'); // 'floor' or 'grid'
   const [showTableDetails, setShowTableDetails] = useState(false);
+  const [showEditTableModal, setShowEditTableModal] = useState(false);
 
   // Initialize socket connection
   useEffect(() => {
@@ -137,6 +139,24 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
   const handleReservationUpdated = () => {
     // Refresh tables to get updated status
     loadTables();
+  };
+
+  const handleTableEdit = (table) => {
+    setSelectedTable(table);
+    setShowTableDetails(false);
+    setShowEditTableModal(true);
+  };
+
+  const handleTableDelete = async (table) => {
+    try {
+      await restaurantTableApi.deleteTable(table.id);
+      setTables(prev => prev.filter(t => t.id !== table.id));
+      setShowTableDetails(false);
+      setSelectedTable(null);
+    } catch (error) {
+      console.error('Error deleting table:', error);
+      setError('Failed to delete table');
+    }
   };
 
   const selectedRestaurantData = restaurants.find(r => r.id === selectedRestaurant);
@@ -360,7 +380,48 @@ const RestaurantTables = ({ selectedRestaurant, restaurants, userRole }) => {
             setSelectedTable(null);
           }}
           onReserve={handleTableReserve}
+          onEdit={handleTableEdit}
+          onDelete={handleTableDelete}
+          userRole={userRole}
         />
+      )}
+
+      {/* Edit Table Modal */}
+      {showEditTableModal && selectedTable && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Table</h2>
+              <button
+                onClick={() => {
+                  setShowEditTableModal(false);
+                  setSelectedTable(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <EditTableForm
+              table={selectedTable}
+              onClose={() => {
+                setShowEditTableModal(false);
+                setSelectedTable(null);
+              }}
+              onEdit={(updatedTable) => {
+                handleTableEdited(updatedTable);
+                setShowEditTableModal(false);
+                setSelectedTable(null);
+              }}
+              onDelete={(tableId) => {
+                handleTableDeleted(tableId);
+                setShowEditTableModal(false);
+                setSelectedTable(null);
+              }}
+              existingTables={tables}
+            />
+          </div>
+        </div>
       )}
 
       {/* Reservation Details Modal */}

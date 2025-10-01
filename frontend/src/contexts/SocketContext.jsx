@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import notificationService from '../services/notificationService';
+import { playNotificationSound } from '../utils/notificationUtils';
 
 const SocketContext = createContext();
 
@@ -21,6 +23,8 @@ export const SocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [toastNotifications, setToastNotifications] = useState([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   const { user } = useAuth();
 
   // Get token directly from localStorage since AuthContext doesn't expose it
@@ -28,6 +32,56 @@ export const SocketProvider = ({ children }) => {
   console.log('🔌 [SOCKET] Auth context:', { user: user?.first_name, token: token ? 'Present' : 'Missing' });
   console.log('🔌 [SOCKET] Token value:', token ? `${token.substring(0, 20)}...` : 'null');
   console.log('🔌 [SOCKET] LocalStorage keys:', Object.keys(localStorage));
+
+  // Sync notifications with database
+  const syncNotifications = async () => {
+    if (!user || !token) return;
+
+    try {
+      setIsLoadingNotifications(true);
+      console.log('🔄 [NOTIFICATION SYNC] Syncing notifications with database...');
+
+      const result = await notificationService.syncNotifications();
+
+      // Convert database notifications to frontend format
+      const dbNotifications = result.notifications.map(dbNotif => ({
+        id: dbNotif.id,
+        type: dbNotif.type,
+        title: dbNotif.title,
+        message: dbNotif.message,
+        data: dbNotif.data,
+        timestamp: dbNotif.created_at,
+        read: dbNotif.read,
+        priority: dbNotif.priority,
+        read_at: dbNotif.read_at
+      }));
+
+      // Merge with existing in-memory notifications (avoid duplicates)
+      setNotifications(prev => {
+        const existingIds = new Set(prev.map(n => n.id));
+        const newNotifications = dbNotifications.filter(n => !existingIds.has(n.id));
+        const merged = [...newNotifications, ...prev].slice(0, 50); // Keep last 50
+
+        console.log(`✅ [NOTIFICATION SYNC] Merged ${newNotifications.length} new notifications from DB`);
+        return merged;
+      });
+
+      setLastSyncTime(new Date().toISOString());
+
+    } catch (error) {
+      console.error('❌ [NOTIFICATION SYNC] Error syncing notifications:', error);
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
+
+  // Effect to sync notifications on mount and user change
+  useEffect(() => {
+    if (user && token) {
+      console.log('🔄 [NOTIFICATION SYNC] User authenticated, syncing notifications...');
+      syncNotifications();
+    }
+  }, [user, token]);
 
   useEffect(() => {
     console.log('🔌 [SOCKET] useEffect triggered');
@@ -90,8 +144,9 @@ export const SocketProvider = ({ children }) => {
           console.log('🍽️ Joining waiter room');
           newSocket.emit('join-waiter-room');
         } else if (['manager', 'admin'].includes(user.role)) {
-          console.log('📋 Joining manager room');
-          newSocket.emit('join-manager-room');
+          console.log('🔑 Joining all accessible rooms for', user.role);
+          // Managers and admins join all rooms for comprehensive notification coverage
+          newSocket.emit('join-all-accessible-rooms');
         }
       });
 
@@ -294,16 +349,65 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  const markNotificationAsRead = (id) => {
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === id ? { ...notif, read: true } : notif
-      )
-    );
+  const markNotificationAsRead = async (id) => {
+    try {
+      // Update local state immediately for responsive UI
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif.id === id ? { ...notif, read: true, read_at: new Date().toISOString() } : notif
+        )
+      );
+
+      // Sync with database
+      if (user && token) {
+        await notificationService.markAsRead(id);
+        console.log(`✅ [NOTIFICATION SYNC] Marked notification ${id} as read in database`);
+      }
+    } catch (error) {
+      console.error('❌ [NOTIFICATION SYNC] Error marking notification as read:', error);
+      // Revert local state on error
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif.id === id ? { ...notif, read: false, read_at: null } : notif
+        )
+      );
+    }
   };
 
-  const clearNotifications = () => {
-    setNotifications([]);
+  const clearNotifications = async () => {
+    const previousNotifications = notifications; // Store current state before clearing
+    try {
+      // Clear local state immediately
+      setNotifications([]);
+
+      // Sync with database
+      if (user && token) {
+        await notificationService.clearAllNotifications();
+        console.log('✅ [NOTIFICATION SYNC] Cleared all notifications in database');
+      }
+    } catch (error) {
+      console.error('❌ [NOTIFICATION SYNC] Error clearing notifications:', error);
+      // Revert local state on error
+      setNotifications(previousNotifications);
+    }
+  };
+
+  const removeNotification = async (id) => {
+    const previousNotifications = notifications; // Store current state before removing
+    try {
+      // Remove from local state immediately
+      setNotifications(prev => prev.filter(notif => notif.id !== id));
+
+      // Sync with database
+      if (user && token) {
+        await notificationService.deleteNotification(id);
+        console.log(`✅ [NOTIFICATION SYNC] Deleted notification ${id} from database`);
+      }
+    } catch (error) {
+      console.error('❌ [NOTIFICATION SYNC] Error deleting notification:', error);
+      // Revert local state on error
+      setNotifications(previousNotifications);
+    }
   };
 
   const removeToastNotification = (id) => {
@@ -323,6 +427,14 @@ export const SocketProvider = ({ children }) => {
     }
   }, []);
 
+  // Method to refresh notifications (can be called from components inside Router)
+  const refreshNotifications = () => {
+    if (user && token) {
+      console.log('🔄 [INTERFACE SWITCH] Refreshing notifications for interface switch...');
+      syncNotifications();
+    }
+  };
+
   const value = {
     socket,
     isConnected,
@@ -332,8 +444,13 @@ export const SocketProvider = ({ children }) => {
     addNotification,
     markNotificationAsRead,
     clearNotifications,
+    removeNotification,
     removeToastNotification,
-    emitEvent
+    emitEvent,
+    syncNotifications,
+    refreshNotifications,
+    isLoadingNotifications,
+    lastSyncTime
   };
 
   return (

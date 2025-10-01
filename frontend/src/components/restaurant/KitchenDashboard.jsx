@@ -312,7 +312,7 @@ const OrderCard = ({ order, onAccept, onReject, actionLoading, isPending }) => {
               Order #{order.order_number}
             </h4>
             <p className="text-sm text-gray-600">
-              Table {order.table_number} • {order.first_name} {order.last_name}
+              {order.table_number ? `Table ${order.table_number}` : 'Takeaway'} • {order.first_name} {order.last_name}
             </p>
             <p className="text-xs text-gray-500">
               Placed: {new Date(order.placed_at).toLocaleTimeString()}
@@ -321,9 +321,14 @@ const OrderCard = ({ order, onAccept, onReject, actionLoading, isPending }) => {
           <div className="text-right">
             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
               order.order_type === 'bar' ? 'bg-purple-100 text-purple-800' :
+              order.order_type === 'takeaway' ? 'bg-orange-100 text-orange-800' :
+              order.order_type === 'room_service' ? 'bg-blue-100 text-blue-800' :
               'bg-green-100 text-green-800'
             }`}>
-              {order.order_type}
+              {order.order_type === 'takeaway' ? 'Takeaway' :
+               order.order_type === 'room_service' ? 'Room Service' :
+               order.order_type === 'dine_in' ? 'Dine In' :
+               order.order_type}
             </span>
             <div className="text-sm font-medium text-gray-900 mt-1">
               ₹{parseFloat(order.total_amount + order.tax_amount).toFixed(2)}

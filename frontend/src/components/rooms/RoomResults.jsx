@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import apiServices from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import toast from "react-hot-toast";
+import {useNavigate} from 'react-router-dom';
 
 const RoomResults = ({ rooms, searchCriteria, onNewSearch }) => {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   if (!rooms || rooms.length === 0) {
     return (
@@ -36,6 +39,7 @@ const RoomResults = ({ rooms, searchCriteria, onNewSearch }) => {
     }
     setSelectedRoom(room);
     setShowBookingModal(true);
+    
   };
 
   const handleCloseBookingModal = () => {
@@ -46,9 +50,20 @@ const RoomResults = ({ rooms, searchCriteria, onNewSearch }) => {
   const handleBookingSuccess = (booking) => {
     setShowBookingModal(false);
     setSelectedRoom(null);
-    alert(`Booking successful! Booking ID: ${booking.id}`);
-    // You might want to redirect to booking confirmation page or refresh data
-  };
+    toast.success("🎉 Booking successful! ", {
+    duration: 4000,
+    style: {
+      borderRadius: "12px",
+      background: "#333",
+      color: "#fff",
+      fontSize: "16px",
+    },
+  });
+  setTimeout(() => {
+     navigate("/rooms?Tab=calendar"); // 👈 change path if your route is different
+   }, 3000);
+};
+
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {

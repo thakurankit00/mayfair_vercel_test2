@@ -1,11 +1,12 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import DraggableBookingBar from './DraggableBookingBar';
 
-const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, onBookingClick, onDateClick, onBookingUpdate, calendarViewMode = 'monthly' }) => {
+const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, onBookingClick, onDateClick, onBookingUpdate, onDateBookingsClick, calendarViewMode = 'monthly' }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   // Timeline scrolling state and refs
   const timelineScrollRef = useRef(null);
+  const headerScrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -21,7 +22,7 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
 
   const scrollTimeline = (direction) => {
     if (timelineScrollRef.current) {
-      const scrollAmount = 320; // 4 columns * 80px each
+      const scrollAmount = calendarViewMode === 'hotel-timeline' ? 288 : 320; // 3 columns * 96px for hotel timeline, 4 columns * 80px for regular timeline
       const currentScroll = timelineScrollRef.current.scrollLeft;
       const targetScroll = direction === 'left'
         ? Math.max(0, currentScroll - scrollAmount)
@@ -38,12 +39,17 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
     setIsScrolling(true);
     updateScrollButtons();
 
+    // Sync header scroll with content scroll using refs for better reliability
+    if (timelineScrollRef.current && headerScrollRef.current) {
+      headerScrollRef.current.style.transform = `translateX(-${timelineScrollRef.current.scrollLeft}px)`;
+    }
+
     // Clear scrolling state after scroll ends
     clearTimeout(window.scrollTimeout);
     window.scrollTimeout = setTimeout(() => {
       setIsScrolling(false);
     }, 150);
-  };
+    };
 
   // Enhanced wheel event handler for horizontal scrolling
   const handleWheelScroll = (e) => {
@@ -256,6 +262,61 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
     return grouped;
   }, [bookings]);
 
+  // Generate timeline dates for hotel view
+  const timelineDates = useMemo(() => {
+    const dates = [];
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 3); // Start 3 days before today
+    
+    for (let i = 0; i < 30; i++) { // Show 30 days
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
+      
+      dates.push({
+        date: new Date(date),
+        day: date.getDate(),
+        weekday: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        isToday: date.toDateString() === today.toDateString(),
+        key: date.toISOString().split('T')[0]
+      });
+    }
+    
+    return dates;
+  }, []);
+
+  // Group bookings by room and date for timeline
+  const timelineBookings = useMemo(() => {
+    const grouped = {};
+    
+    rooms.forEach(room => {
+      grouped[room.id] = {};
+    });
+    
+    bookings.forEach(booking => {
+      if (grouped[booking.room_id]) {
+        const checkIn = new Date(booking.check_in_date);
+        const checkOut = new Date(booking.check_out_date);
+        const currentDate = new Date(checkIn);
+        
+        while (currentDate < checkOut) {
+          const dateKey = currentDate.toISOString().split('T')[0];
+          if (!grouped[booking.room_id][dateKey]) {
+            grouped[booking.room_id][dateKey] = [];
+          }
+          grouped[booking.room_id][dateKey].push({
+            ...booking,
+            isStartDate: dateKey === booking.check_in_date.split('T')[0],
+            isEndDate: dateKey === booking.check_out_date.split('T')[0]
+          });
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    });
+    
+    return grouped;
+  }, [rooms, bookings]);
+
   // Enhanced booking position and width calculation for timeline view
   const calculateBookingStyle = (booking, dateColumns) => {
     if (!booking || !dateColumns || dateColumns.length === 0) {
@@ -423,27 +484,27 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-green-500 border border-green-600"></div>
-              <span className="font-medium">✅ Confirmed</span>
+              <span className="font-medium"> Confirmed</span>
             </div>
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-blue-500 border border-blue-600"></div>
-              <span className="font-medium">🟦 Checked In</span>
+              <span className="font-medium"> Checked In</span>
             </div>
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-yellow-500 border border-yellow-600"></div>
-              <span className="font-medium">🟨 Pending</span>
+              <span className="font-medium">Pending</span>
             </div>
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-red-500 border border-red-600"></div>
-              <span className="font-medium">🟥 Checked Out</span>
+              <span className="font-medium"> Checked Out</span>
             </div>
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-orange-500 border border-orange-600"></div>
-              <span className="font-medium">🟧 Booked</span>
+              <span className="font-medium"> Booked</span>
             </div>
             <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg shadow-sm">
               <div className="w-4 h-4 rounded bg-gray-500 border border-gray-600"></div>
-              <span className="font-medium">⬜ Cancelled</span>
+              <span className="font-medium">Cancelled</span>
             </div>
           </div>
         </div>
@@ -454,7 +515,178 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
     );
   };
 
-  // Enhanced Timeline View with Booking Date Flow
+  // Hotel Timeline View
+  if (calendarViewMode === 'hotel-timeline') {
+    return (
+      <div className="h-full flex flex-col bg-white">
+        {/* Fixed Header with Month Navigation */}
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-900">Hotel Timeline View</h2>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => scrollTimeline('left')}
+                disabled={!canScrollLeft}
+                className={`p-2 rounded-lg ${canScrollLeft ? 'bg-blue-50 hover:bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}
+              >
+                ←
+              </button>
+              <button
+                onClick={() => scrollTimeline('right')}
+                disabled={!canScrollRight}
+                className={`p-2 rounded-lg ${canScrollRight ? 'bg-blue-50 hover:bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Fixed Date Header */}
+        <div className="flex-shrink-0 flex border-b border-gray-200">
+          {/* Fixed Room Header Corner */}
+          <div className="w-80 flex-shrink-0 bg-gray-50 border-r border-gray-200 p-3">
+            <div className="font-semibold text-gray-900">Rooms ({rooms.length})</div>
+            <div className="text-xs text-gray-500">Click cells to book</div>
+          </div>
+          
+          {/* Scrollable Date Header */}
+          <div className="flex-1 overflow-hidden">
+            <div
+              ref={headerScrollRef}
+              className="flex transition-transform duration-200"
+            >
+              {timelineDates.map((date) => (
+                <div
+                  key={date.key}
+                  className={`w-24 flex-shrink-0 p-3 text-center border-r border-gray-200 ${
+                    date.isToday ? 'bg-blue-100 border-blue-300' : 'bg-gray-50'
+                  }`}
+                >
+                  <div className={`font-semibold ${date.isToday ? 'text-blue-800' : 'text-gray-900'}`}>
+                    {date.day}
+                  </div>
+                  <div className={`text-xs ${date.isToday ? 'text-blue-600' : 'text-gray-500'}`}>
+                    {date.weekday}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable Content Area */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Fixed Room Column */}
+          <div className="w-80 flex-shrink-0 border-r border-gray-200 overflow-y-auto">
+            {rooms.map((room) => (
+              <div key={room.id} className="border-b border-gray-200 p-4 bg-white hover:bg-gray-50">
+                <div className="font-semibold text-gray-900 mb-2">Room {room.room_number}</div>
+                <div className="space-y-1 text-sm">
+                  <div className="text-gray-600">{room.room_type}</div>
+                  <div className="text-gray-500">Floor {room.floor} • Max {room.max_occupancy} guests</div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`w-2 h-2 rounded-full ${
+                      room.status === 'available' ? 'bg-green-500' :
+                      room.status === 'occupied' ? 'bg-red-500' :
+                      room.status === 'maintenance' ? 'bg-orange-500' : 'bg-yellow-500'
+                    }`} />
+                    <span className="text-xs capitalize">{room.status}</span>
+                  </div>
+                  {room.base_price && (
+                    <div className="text-green-600 font-medium">₹{room.base_price}/night</div>
+                  )}
+                </div>
+                
+                {/* Room Bookings List */}
+                {bookingsByRoom[room.id] && bookingsByRoom[room.id].length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <div className="text-xs font-medium text-gray-700">Current Bookings:</div>
+                    {bookingsByRoom[room.id].slice(0, 2).map((booking) => (
+                      <div key={booking.id} className="text-xs bg-blue-50 p-2 rounded">
+                        <div className="font-medium">{booking.customer_name || 'Guest'}</div>
+                        <div className="text-gray-600">
+                          {booking.number_of_guests || 1} guests • {Math.ceil((new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24))} nights
+                        </div>
+                        <div className="text-gray-500">
+                          {new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Scrollable Timeline Grid */}
+          <div
+            ref={timelineScrollRef}
+            className="flex-1 overflow-auto"
+            onScroll={handleTimelineScroll}
+            onWheel={handleWheelScroll}
+          >
+            <div style={{ minWidth: `${timelineDates.length * 96}px` }}>
+              {rooms.map((room) => (
+                <div key={room.id} className="flex border-b border-gray-200" style={{ height: '120px' }}>
+                  {timelineDates.map((date) => {
+                    const dateBookings = timelineBookings[room.id]?.[date.key] || [];
+                    const hasBooking = dateBookings.length > 0;
+                    
+                    return (
+                      <div
+                        key={`${room.id}-${date.key}`}
+                        className={`w-24 flex-shrink-0 border-r border-gray-200 p-1 cursor-pointer hover:bg-blue-50 ${
+                          date.isToday ? 'bg-blue-25' : 'bg-white'
+                        } ${hasBooking ? 'bg-green-50' : ''}`}
+                        onClick={() => onDateClick && onDateClick(date.date, room)}
+                        title={`${hasBooking ? 'Booked' : 'Available'} - Room ${room.room_number} on ${date.date.toLocaleDateString()}`}
+                      >
+                        {hasBooking && (
+                          <div className="space-y-1">
+                            {dateBookings.slice(0, 2).map((booking, idx) => (
+                              <div
+                                key={`${booking.id}-${idx}`}
+                                className={`text-xs px-2 py-1 rounded cursor-pointer ${getBookingStatusColor(booking.status)}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onBookingClick && onBookingClick(booking);
+                                }}
+                                onMouseEnter={(e) => onBookingHover && onBookingHover(booking, e)}
+                                onMouseLeave={(e) => onBookingHover && onBookingHover(null, e)}
+                              >
+                                <div className="truncate font-medium">
+                                  {booking.customer_name || 'Guest'}
+                                </div>
+                                {booking.isStartDate && (
+                                  <div className="text-xs opacity-75">Check-in</div>
+                                )}
+                                {booking.isEndDate && (
+                                  <div className="text-xs opacity-75">Check-out</div>
+                                )}
+                              </div>
+                            ))}
+                            {dateBookings.length > 2 && (
+                              <div className="text-xs text-blue-600 px-2">+{dateBookings.length - 2} more</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Status Legend */}
+        {renderStatusLegend('timeline')}
+      </div>
+    );
+  }
+
+  // Enhanced Timeline View with Professional Layout
   if (calendarViewMode === 'timeline') {
     if (!rooms.length || !dateColumns.length) {
       return (
@@ -464,311 +696,277 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
       );
     }
 
-    // Enhanced responsive column width calculation for timeline view
-    const getTimelineColumnWidth = () => {
-      const isMobile = window.innerWidth < 768;
-      const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
-
-      switch (viewType) {
-        case 'month':
-          if (isMobile) {
-            return dateColumns.length > 31 ? 'min-w-10 w-10' : 'min-w-12 w-12'; // Daily columns - mobile
-          } else if (isTablet) {
-            return dateColumns.length > 31 ? 'min-w-12 w-12' : 'min-w-14 w-14'; // Daily columns - tablet
-          } else {
-            return dateColumns.length > 31 ? 'min-w-14 w-14' : 'min-w-16 w-16'; // Daily columns - desktop
-          }
-        case 'quarter':
-          return isMobile ? 'min-w-16 w-16' : isTablet ? 'min-w-18 w-18' : 'min-w-20 w-20'; // Weekly columns
-        case 'year':
-          return isMobile ? 'min-w-20 w-20' : isTablet ? 'min-w-22 w-22' : 'min-w-24 w-24'; // Monthly columns
-        default:
-          return isMobile ? 'min-w-12 w-12' : isTablet ? 'min-w-14 w-14' : 'min-w-16 w-16';
-      }
-    };
-
-    const columnWidth = getTimelineColumnWidth();
-
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden relative">
-        {/* Navigation Controls */}
-        <div className="absolute top-4 right-4 z-40 flex space-x-2">
-          <button
-            onClick={() => scrollTimeline('left')}
-            disabled={!canScrollLeft}
-            className={`p-2 rounded-full shadow-lg transition-all duration-200 ${
-              canScrollLeft
-                ? 'bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 cursor-pointer'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-            title="Scroll left"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => scrollTimeline('right')}
-            disabled={!canScrollRight}
-            className={`p-2 rounded-full shadow-lg transition-all duration-200 ${
-              canScrollRight
-                ? 'bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 cursor-pointer'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-            title="Scroll right"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+      <div className="h-full flex flex-col bg-white">
+        {/* Fixed Header with Navigation - Consistent with Monthly View */}
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => scrollTimeline('left')}
+                disabled={!canScrollLeft}
+                className={`p-2 rounded-lg transition-colors ${
+                  canScrollLeft
+                    ? 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <h2 className="text-xl font-semibold text-gray-900">
+                Timeline View - {viewType.charAt(0).toUpperCase() + viewType.slice(1)}
+              </h2>
+
+              <button
+                onClick={() => scrollTimeline('right')}
+                disabled={!canScrollRight}
+                className={`p-2 rounded-lg transition-colors ${
+                  canScrollRight
+                    ? 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">{rooms.length} rooms</span>
+              <div className="w-px h-4 bg-gray-300"></div>
+              <span className="text-sm text-gray-600">{dateColumns.length} {viewType === 'month' ? 'days' : viewType === 'quarter' ? 'weeks' : 'months'}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Enhanced Scroll Indicator with Position */}
-        {isScrolling && timelineScrollRef.current && (
-          <div className="absolute top-16 right-4 z-40 bg-black bg-opacity-75 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
-            <div className="flex items-center space-x-2">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-              <span>
-                {Math.round((timelineScrollRef.current.scrollLeft / (timelineScrollRef.current.scrollWidth - timelineScrollRef.current.clientWidth)) * 100)}%
-              </span>
-            </div>
+        {/* Horizontally Scrollable Date Header - Fixed Top */}
+        <div className="flex-shrink-0 flex border-b border-gray-200 bg-gray-50 sticky top-0 z-20">
+          {/* Fixed Room Header */}
+          <div className="w-80 flex-shrink-0 border-r border-gray-200 p-3 bg-gray-50">
+            <div className="font-semibold text-gray-900">Room Details</div>
+            <div className="text-xs text-gray-500 mt-1">Type • Floor • Occupancy • Price</div>
           </div>
-        )}
 
-        {/* Scroll Progress Bar */}
-        {dateColumns.length > 10 && (
-          <div className="absolute bottom-0 left-64 right-0 h-1 bg-gray-200 z-30">
-            <div
-              className="h-full bg-blue-500 transition-all duration-200"
-              style={{
-                width: timelineScrollRef.current
-                  ? `${(timelineScrollRef.current.clientWidth / timelineScrollRef.current.scrollWidth) * 100}%`
-                  : '0%',
-                transform: timelineScrollRef.current
-                  ? `translateX(${(timelineScrollRef.current.scrollLeft / (timelineScrollRef.current.scrollWidth - timelineScrollRef.current.clientWidth)) * (timelineScrollRef.current.clientWidth - (timelineScrollRef.current.clientWidth / timelineScrollRef.current.scrollWidth) * timelineScrollRef.current.clientWidth)}px)`
-                  : 'translateX(0px)'
-              }}
-            />
-          </div>
-        )}
+          {/* Horizontally Scrollable Date Header */}
+          <div
+            className="flex-1 overflow-x-auto bg-gray-50"
+            style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#CBD5E0 #F7FAFC'
+            }}
+            onScroll={(e) => {
+              // Sync timeline content scroll with header scroll
+              if (timelineScrollRef.current) {
+                timelineScrollRef.current.scrollLeft = e.target.scrollLeft;
+              }
+            }}
+          >
+            <style jsx>{`
+              .date-header-scroll::-webkit-scrollbar {
+                height: 6px;
+              }
+              .date-header-scroll::-webkit-scrollbar-track {
+                background: #F7FAFC;
+                border-radius: 3px;
+              }
+              .date-header-scroll::-webkit-scrollbar-thumb {
+                background: #CBD5E0;
+                border-radius: 3px;
+              }
+              .date-header-scroll::-webkit-scrollbar-thumb:hover {
+                background: #A0AEC0;
+              }
+            `}</style>
+            <div 
+              className="flex date-header-scroll"
+              style={{ minWidth: `${dateColumns.length * 80}px` }}
+            >
+              {dateColumns.map((column) => {
+                const isWeekend = viewType === 'month' && column.date && (column.date.getDay() === 0 || column.date.getDay() === 6);
+                const isToday = viewType === 'month' && column.date && column.date.toDateString() === new Date().toDateString();
 
-        {/* Unified Timeline Container with Enhanced Scrolling */}
-        <div
-          ref={timelineScrollRef}
-          className="timeline-container overflow-x-auto overflow-y-visible scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 focus:outline-none"
-          style={{
-            touchAction: 'pan-x pan-y',
-            scrollbarWidth: 'thin',
-            scrollbarColor: '#CBD5E0 #F7FAFC'
-          }}
-          onScroll={handleTimelineScroll}
-          onWheel={handleWheelScroll}
-          tabIndex={0}
-          role="region"
-          aria-label="Timeline scroll area - use arrow keys to navigate"
-        >
-          <div style={{ minWidth: `${64 * 4 + dateColumns.length * 80}px` }}> {/* Fixed minimum width calculation */}
-
-            {/* Enhanced Timeline Header - Scrolls with content */}
-            <div className="sticky top-0 z-20 bg-white border-b-2 border-gray-300 shadow-lg">
-              <div className="flex">
-                {/* Room Details Header - Sticky Left Column */}
-                <div className="w-64 flex-shrink-0 bg-gradient-to-r from-gray-100 to-gray-50 border-r-2 border-gray-300 p-4 sticky left-0 z-30">
-                  <div className="font-bold text-gray-900 text-base">Room Details</div>
-                  <div className="text-xs text-gray-600 mt-1">
-                    {rooms.length} room{rooms.length !== 1 ? 's' : ''} • {viewType} view
-                  </div>
-                  <div className="text-xs text-blue-600 mt-1 font-medium">
-                    Drag bars to reschedule
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    ← → keys or scroll to navigate
-                  </div>
-                </div>
-
-                {/* Enhanced Date columns header - Scrolls horizontally */}
-                <div className="flex">
-                  {dateColumns.map((column, index) => {
-                    const isWeekend = viewType === 'month' && column.date && column.date instanceof Date && (column.date.getDay() === 0 || column.date.getDay() === 6);
-                    const isToday = viewType === 'month' && column.date && column.date instanceof Date && column.date.toDateString() === new Date().toDateString();
-
-                    return (
-                      <div
-                        key={column.key}
-                        className={`w-20 flex-shrink-0 p-3 text-center border-r border-gray-200 transition-colors ${
-                          isToday
-                            ? 'bg-blue-100 border-blue-300'
-                            : isWeekend
-                              ? 'bg-orange-50'
-                              : 'bg-gray-50'
-                        }`}
-                      >
-                      <div className={`text-sm font-bold ${
-                        isToday
-                          ? 'text-blue-800'
-                          : isWeekend
-                            ? 'text-orange-800'
-                            : 'text-gray-800'
-                      }`}>
-                        {viewType === 'month'
-                          ? (column.date && column.date instanceof Date ? column.date.getDate() : '')
-                          : (column.label || '')
-                        }
-                      </div>
-                      <div className={`text-xs mt-1 ${
-                        isToday
-                          ? 'text-blue-600 font-medium'
-                          : isWeekend
-                            ? 'text-orange-600 font-medium'
-                            : 'text-gray-500'
-                      }`}>
-                        {viewType === 'month'
-                          ? (column.date && column.date instanceof Date
-                              ? column.date.toLocaleDateString('en-US', { weekday: 'short' })
-                              : ''
-                            )
-                          : (column.fullLabel || '')
-                        }
-                      </div>
-                      {isToday && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mx-auto mt-1"></div>
-                      )}
+                return (
+                  <div
+                    key={column.key}
+                    className={`w-20 flex-shrink-0 p-2 text-center border-r border-gray-200 relative ${
+                      isToday
+                        ? 'bg-blue-100 border-blue-300'
+                        : isWeekend
+                        ? 'bg-orange-50'
+                        : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className={`text-sm font-medium ${
+                      isToday ? 'text-blue-800' : isWeekend ? 'text-orange-800' : 'text-gray-900'
+                    }`}>
+                      {viewType === 'month' && column.date ? column.date.getDate() : column.label}
                     </div>
-                    );
-                  })}
-                </div>
-              </div>
+                    <div className={`text-xs mt-1 ${
+                      isToday ? 'text-blue-600' : isWeekend ? 'text-orange-600' : 'text-gray-500'
+                    }`}>
+                      {viewType === 'month' && column.date
+                        ? column.date.toLocaleDateString('en-US', { weekday: 'short' })
+                        : column.fullLabel
+                      }
+                    </div>
+                    {isToday && (
+                      <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-blue-500 rounded-full"></div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          </div>
+        </div>
 
-            {/* Enhanced Room Rows with Professional Booking Flow */}
-            <div className="relative">
-              {rooms.map((room, roomIndex) => (
-                <div
-                  key={room.id}
-                  className={`flex border-b border-gray-200 hover:bg-blue-25 transition-colors ${
-                    roomIndex % 2 === 0 ? 'bg-white' : 'bg-gray-25'
-                  }`}
-                  style={{ minHeight: '88px' }} // Increased height for better booking bar visibility
-                >
-                  {/* Enhanced Room Info Column - Sticky Left */}
-                  <div className="w-64 flex-shrink-0 border-r-2 border-gray-300 p-4 bg-white sticky left-0 z-10 shadow-sm">
+        {/* Timeline Content with Independent Scrollbars */}
+        <div className="flex-1 flex overflow-hidden max-h-[600px]">
+          {/* Room Column with Independent Vertical Scroll */}
+          <div
+            className="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto room-scroll"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E0 #F7FAFC' }}
+            onScroll={(e) => {
+              // Sync booking grid vertical scroll with room column scroll
+              if (timelineScrollRef.current) {
+                timelineScrollRef.current.scrollTop = e.target.scrollTop;
+              }
+            }}
+          >
+            <style jsx>{`
+              .room-scroll::-webkit-scrollbar {
+                width: 6px;
+              }
+              .room-scroll::-webkit-scrollbar-track {
+                background: #F7FAFC;
+                border-radius: 3px;
+              }
+              .room-scroll::-webkit-scrollbar-thumb {
+                background: #CBD5E0;
+                border-radius: 3px;
+              }
+              .room-scroll::-webkit-scrollbar-thumb:hover {
+                background: #A0AEC0;
+              }
+            `}</style>
+            {rooms.map((room, roomIndex) => (
+              <div key={room.id} className={`border-b border-gray-200 p-4 hover:bg-gray-50 transition-colors ${
+                roomIndex % 2 === 0 ? 'bg-white' : 'bg-gray-25'
+              }`} style={{ minHeight: '80px' }}>
                 <div className="flex flex-col space-y-2">
-                  {/* Room Number - Primary */}
-                  <div className="font-bold text-lg text-gray-900 mb-1">
-                    Room {room.room_number}
-                  </div>
-
-                  {/* Room Type */}
-                  <div className="text-sm font-medium text-gray-700 bg-gray-100 px-2 py-1 rounded">
-                    {room.room_type}
-                  </div>
-
-                  {/* Room Details */}
+                  <div className="font-bold text-lg text-gray-900">Room {room.room_number}</div>
+                  <div className="text-sm text-gray-700 bg-gray-100 px-2 py-1 rounded inline-block">{room.room_type}</div>
                   <div className="flex items-center justify-between text-xs text-gray-600">
                     <span>Floor {room.floor}</span>
-                    <span>Max: {room.max_occupancy}</span>
+                    <span>Max {room.max_occupancy}</span>
                   </div>
-
-                  {/* Room Status */}
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`inline-block w-3 h-3 rounded-full shadow-sm ${
-                        room.status === 'available'
-                          ? 'bg-green-500'
-                          : room.status === 'occupied'
-                          ? 'bg-red-500'
-                          : room.status === 'maintenance'
-                          ? 'bg-orange-500'
-                          : 'bg-yellow-500'
-                      }`}
-                    />
-                    <span className="text-xs font-medium text-gray-700 capitalize">
-                      {room.status}
-                    </span>
-                  </div>
-
-                  {/* Base Price */}
-                  {room.base_price && (
-                    <div className="text-xs text-green-600 font-medium">
-                      ₹{room.base_price}/night
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        room.status === 'available' ? 'bg-green-500' : room.status === 'occupied' ? 'bg-red-500' : room.status === 'maintenance' ? 'bg-orange-500' : 'bg-yellow-500'
+                      }`} />
+                      <span className="text-xs capitalize text-gray-700">{room.status}</span>
                     </div>
-                  )}
+                    {room.base_price && <span className="text-xs text-green-600 font-medium">₹{room.base_price}/night</span>}
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
 
-                  {/* Enhanced Booking Timeline Area */}
-                  <div className="flex-1 relative h-20">
-                    {/* Background Date Grid */}
-                    <div className="flex h-full">
-                      {dateColumns.map((column, colIndex) => {
-                        const isWeekend = viewType === 'month' && column.date && column.date instanceof Date && (column.date.getDay() === 0 || column.date.getDay() === 6);
-                        const isToday = viewType === 'month' && column.date && column.date instanceof Date && column.date.toDateString() === new Date().toDateString();
-
-                        return (
-                          <div
-                            key={`${room.id}-${column.key}`}
-                            className={`w-20 flex-shrink-0 border-r border-gray-200 cursor-pointer hover:bg-blue-50 transition-colors relative ${
-                              isToday
-                                ? 'bg-blue-50 border-blue-300'
-                                : isWeekend
-                                ? 'bg-orange-25'
-                                : 'bg-white hover:bg-gray-50'
-                            }`}
-                            onDoubleClick={() => onDateClick && onDateClick(column.date, room)}
-                            title={`Double-click to create booking for Room ${room.room_number} on ${column.date ? column.date.toLocaleDateString() : column.label}`}
-                          >
-                            {/* Subtle grid lines for better alignment */}
-                            <div className="absolute inset-0 border-l border-gray-100"></div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                  {/* Enhanced Draggable Booking Bars with Professional Overlap Handling */}
+          {/* Booking Grid with Synchronized Scrolling */}
+          <div
+            ref={timelineScrollRef}
+            className="flex-1 overflow-auto booking-grid"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E0 #F7FAFC' }}
+            onScroll={(e) => {
+              // Sync header horizontal scroll
+              const headerScroll = e.target.parentElement.previousElementSibling.querySelector('.date-header-scroll').parentElement;
+              if (headerScroll) {
+                headerScroll.scrollLeft = e.target.scrollLeft;
+              }
+              // Sync room column vertical scroll
+              const roomColumn = e.target.parentElement.previousElementSibling;
+              if (roomColumn) {
+                roomColumn.scrollTop = e.target.scrollTop;
+              }
+              handleTimelineScroll();
+            }}
+            onWheel={handleWheelScroll}
+          >
+            <style jsx>{`
+              .booking-grid::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+              }
+              .booking-grid::-webkit-scrollbar-track {
+                background: #F7FAFC;
+                border-radius: 3px;
+              }
+              .booking-grid::-webkit-scrollbar-thumb {
+                background: #CBD5E0;
+                border-radius: 3px;
+              }
+              .booking-grid::-webkit-scrollbar-thumb:hover {
+                background: #A0AEC0;
+              }
+              .booking-grid::-webkit-scrollbar-corner {
+                background: #F7FAFC;
+              }
+            `}</style>
+            <div style={{ minWidth: `${dateColumns.length * 80}px` }}>
+              {rooms.map((room, roomIndex) => (
+                <div key={room.id} className={`flex border-b border-gray-200 relative ${
+                  roomIndex % 2 === 0 ? 'bg-white' : 'bg-gray-25'
+                }`} style={{ minHeight: '80px' }}>
+                  {dateColumns.map((column) => {
+                    const isWeekend = viewType === 'month' && column.date && (column.date.getDay() === 0 || column.date.getDay() === 6);
+                    const isToday = viewType === 'month' && column.date && column.date.toDateString() === new Date().toDateString();
+                    return (
+                      <div key={`${room.id}-${column.key}`} className={`w-20 flex-shrink-0 border-r border-gray-200 cursor-pointer hover:bg-blue-50 transition-colors ${
+                        isToday ? 'bg-blue-50 border-blue-300' : isWeekend ? 'bg-orange-25' : 'hover:bg-gray-50'
+                      }`} onDoubleClick={() => onDateClick && onDateClick(column.date, room)} title={`Double-click to create booking for Room ${room.room_number}`}>
+                        {isToday && <div className="absolute top-1 left-1 w-2 h-2 bg-blue-500 rounded-full opacity-75"></div>}
+                      </div>
+                    );
+                  })}
                   {bookingsByRoom[room.id] && bookingsByRoom[room.id].map((booking, bookingIndex) => {
                     const style = calculateBookingStyle(booking, dateColumns);
                     const statusColor = getBookingStatusColor(booking.status);
-
-                    // Enhanced vertical stacking for overlapping bookings
-                    const verticalOffset = bookingIndex * 22; // 22px offset per booking for better visibility
+                    const nights = Math.ceil((new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
+                    if (!style || style.left === undefined || style.width === undefined) return null;
                     const enhancedStyle = {
-                      ...style,
-                      top: `${8 + verticalOffset}px`, // Start 8px from top
-                      height: '18px', // Consistent height for all booking bars
-                      zIndex: 20 + bookingIndex, // Higher z-index for later bookings
-                      minWidth: style.width || '60px' // Ensure minimum width for visibility
+                      position: 'absolute',
+                      left: style.left,
+                      width: style.width,
+                      top: `${12 + bookingIndex * 24}px`,
+                      height: '20px',
+                      zIndex: 10 + bookingIndex,
+                      minWidth: '60px'
                     };
-
-                    // Skip rendering if style calculation failed
-                    if (!style || style.left === undefined || style.width === undefined) {
-                      return null;
-                    }
-
                     return (
-                      <DraggableBookingBar
-                        key={booking.id}
-                        booking={booking}
-                        style={enhancedStyle}
-                        statusColor={statusColor}
-                        dateColumns={dateColumns}
-                        columnWidth={columnWidth}
-                        onBookingClick={onBookingClick}
-                        onBookingHover={onBookingHover}
-                        onBookingUpdate={onBookingUpdate}
-                        roomId={room.id}
-                      />
+                      <div key={booking.id} className={`${statusColor} rounded px-2 py-1 cursor-pointer hover:opacity-90 transition-all duration-200 shadow-sm border hover:shadow-md`} style={enhancedStyle}
+                        onClick={(e) => { e.stopPropagation(); onBookingClick && onBookingClick(booking); }}
+                        onMouseEnter={(e) => onBookingHover && onBookingHover(booking, e)}
+                        onMouseLeave={(e) => onBookingHover && onBookingHover(null, e)}
+                        title={`${booking.customer_name || 'Guest'} - ${nights} nights - ₹${booking.total_amount || 'N/A'} - Status: ${booking.status}`}>
+                        <div className="flex items-center justify-between text-xs font-medium truncate">
+                          <span className="truncate flex-1">{booking.customer_name || 'Guest'}</span>
+                          <span className="ml-1 flex-shrink-0 opacity-75">₹{booking.total_amount || 'N/A'}</span>
+                        </div>
+                      </div>
                     );
-                    })}
-                  </div>
+                  })}
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Timeline Status Legend */}
+        {/* Status Legend - Consistent with Monthly View */}
         {renderStatusLegend('timeline')}
       </div>
     );
@@ -776,9 +974,9 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
 
   // Render Monthly Grid View (Google Calendar style)
   return (
-    <div className="bg-white">
-      {/* Calendar Header with Navigation - Fixed */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 p-4">
+    <div className="h-full flex flex-col bg-white">
+      {/* Fixed Calendar Header with Navigation */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
@@ -813,68 +1011,77 @@ const CalendarGrid = ({ rooms, bookings, dateRange, viewType, onBookingHover, on
         </div>
       </div>
 
-      {/* Days of Week Header */}
-      <div className="grid grid-cols-7 border-b border-gray-200">
+      {/* Fixed Days of Week Header */}
+      <div className="flex-shrink-0 grid grid-cols-7 border-b border-gray-200 bg-gray-50">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-          <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-500 bg-gray-50">
+          <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-500">
             <span className="hidden sm:inline">{day}</span>
             <span className="sm:hidden">{day.charAt(0)}</span>
           </div>
         ))}
       </div>
 
-      {/* Calendar Grid Body */}
-      <div className="grid grid-cols-7">
-        {generateMonthlyGrid.map((day) => (
-          <div
-            key={day.key}
-            className={`min-h-24 sm:min-h-32 border-r border-b border-gray-200 p-1 sm:p-2 cursor-pointer hover:bg-gray-50 ${
-              day.isToday ? 'bg-blue-50 border-blue-300' : ''
-            } ${
-              !day.isCurrentMonth ? 'bg-gray-50 text-gray-400' : 'bg-white'
-            }`}
-            onClick={() => onDateClick && onDateClick(day.date)}
-          >
-            {/* Date number */}
-            <div className={`text-xs sm:text-sm font-medium mb-1 sm:mb-2 ${
-              day.isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-xs' : ''
-            }`}>
-              {day.day}
-            </div>
+      {/* Scrollable Calendar Grid Body */}
+      <div className="flex-1 overflow-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+        <div className="grid grid-cols-7">
+          {generateMonthlyGrid.map((day) => (
+            <div
+              key={day.key}
+              className={`min-h-24 sm:min-h-32 border-r border-b border-gray-200 p-1 sm:p-2 cursor-pointer hover:bg-gray-50 ${
+                day.isToday ? 'bg-blue-50 border-blue-300' : ''
+              } ${
+                !day.isCurrentMonth ? 'bg-gray-50 text-gray-400' : 'bg-white'
+              }`}
+              onClick={() => onDateClick && onDateClick(day.date)}
+            >
+              {/* Date number */}
+              <div className={`text-xs sm:text-sm font-medium mb-1 sm:mb-2 ${
+                day.isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-xs' : ''
+              }`}>
+                {day.day}
+              </div>
 
-            {/* Bookings for this date */}
-            <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
-              {bookingsByDate[day.key] && bookingsByDate[day.key].slice(0, window.innerWidth < 768 ? 2 : 3).map((booking, bookingIndex) => (
-                <div
-                  key={`${booking.id}-${bookingIndex}`}
-                  className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:opacity-80 ${getBookingStatusColor(booking.status)}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onBookingClick && onBookingClick(booking);
-                  }}
-                  onMouseEnter={(e) => onBookingHover && onBookingHover(booking, e)}
-                  onMouseLeave={(e) => onBookingHover && onBookingHover(null, e)}
-                  title={`Room ${booking.room_number} - ${booking.customer_name || 'Guest'}`}
-                >
-                  <div className="truncate text-xs">
-                    <span className="hidden sm:inline">{booking.isStartDate && '📅'} Room {booking.room_number}</span>
-                    <span className="sm:hidden">R{booking.room_number}</span>
+              {/* Bookings for this date */}
+              <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
+                {bookingsByDate[day.key] && bookingsByDate[day.key].slice(0, window.innerWidth < 768 ? 2 : 3).map((booking, bookingIndex) => (
+                  <div
+                    key={`${booking.id}-${bookingIndex}`}
+                    className={`text-xs px-1 sm:px-2 py-0.5 sm:py-1 rounded cursor-pointer hover:opacity-80 ${getBookingStatusColor(booking.status)}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onBookingClick && onBookingClick(booking);
+                    }}
+                    onMouseEnter={(e) => onBookingHover && onBookingHover(booking, e)}
+                    onMouseLeave={(e) => onBookingHover && onBookingHover(null, e)}
+                    title={`Room ${booking.room_number} - ${booking.customer_name || 'Guest'}`}
+                  >
+                    <div className="truncate text-xs">
+                      <span className="hidden sm:inline">{booking.isStartDate && '📅'} Room {booking.room_number}</span>
+                      <span className="sm:hidden">R{booking.room_number}</span>
+                    </div>
+                    <div className="truncate text-xs hidden sm:block">
+                      {booking.customer_name || 'Guest'}
+                    </div>
                   </div>
-                  <div className="truncate text-xs hidden sm:block">
-                    {booking.customer_name || 'Guest'}
-                  </div>
-                </div>
-              ))}
+                ))}
 
-              {/* Show "more" indicator if there are additional bookings */}
-              {bookingsByDate[day.key] && bookingsByDate[day.key].length > (window.innerWidth < 768 ? 2 : 3) && (
-                <div className="text-xs text-gray-500 px-1 sm:px-2">
-                  +{bookingsByDate[day.key].length - (window.innerWidth < 768 ? 2 : 3)} more
-                </div>
-              )}
+                {/* Show "more" indicator if there are additional bookings */}
+                {bookingsByDate[day.key] && bookingsByDate[day.key].length > (window.innerWidth < 768 ? 2 : 3) && (
+                  <div
+                    className="text-xs text-blue-600 px-1 sm:px-2 cursor-pointer hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDateBookingsClick && onDateBookingsClick(day.date, bookingsByDate[day.key]);
+                    }}
+                    title="Click to view all bookings for this date"
+                  >
+                    +{bookingsByDate[day.key].length - (window.innerWidth < 768 ? 2 : 3)} more
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Monthly Status Legend */}

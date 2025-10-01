@@ -4,21 +4,30 @@ import { api } from './api';
 export const roomApi = {
   // Get all rooms
   getRooms: async (filters = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) {
-        queryParams.append(key, filters[key]);
-      }
-    });
-    
-    const url = `/api/v1/hotel/rooms${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    const response = await api.get(url);
-    return response.data;
+    try {
+      console.log('🏨 [HOTEL API] Fetching all rooms...');
+      const queryParams = new URLSearchParams();
+      Object.keys(filters).forEach(key => {
+        if (filters[key]) {
+          queryParams.append(key, filters[key]);
+        }
+      });
+
+      const url = `/api/v1/rooms/list${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      console.log('🏨 [HOTEL API] Calling URL:', url);
+      const response = await api.get(url);
+      console.log('🏨 [HOTEL API] Rooms response:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [HOTEL API] Failed to fetch rooms:', error);
+      // Fallback: if the new endpoint doesn't work, return empty array
+      return { success: false, rooms: [], message: error.message };
+    }
   },
 
   // Get single room
   getRoom: async (roomId) => {
-    const response = await api.get(`/api/v1/hotel/rooms/${roomId}`);
+    const response = await api.get(`/api/v1/rooms/${roomId}`);
     return response.data;
   },
 
@@ -57,8 +66,21 @@ export const roomApi = {
       queryParams.append('room_type_id', roomTypeId);
     }
     
-    const response = await api.get(`/api/v1/hotel/rooms/availability?${queryParams.toString()}`);
+    const response = await api.get(`/api/v1/rooms/availability?${queryParams.toString()}`);
     return response.data;
+  },
+
+  // Get room types
+  getRoomTypes: async () => {
+    try {
+      console.log('🏨 [HOTEL API] Fetching room types...');
+      const response = await api.get('/api/v1/rooms/types');
+      console.log('🏨 [HOTEL API] Room types response:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ [HOTEL API] Failed to fetch room types:', error);
+      return [];
+    }
   }
 };
 
@@ -105,45 +127,45 @@ export const bookingApi = {
         queryParams.append(key, filters[key]);
       }
     });
-    
-    const url = `/api/v1/hotel/bookings${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+    const url = `/bookings${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await api.get(url);
     return response.data;
   },
 
   // Get single booking
   getBooking: async (bookingId) => {
-    const response = await api.get(`/api/v1/hotel/bookings/${bookingId}`);
+    const response = await api.get(`/bookings/${bookingId}`);
     return response.data;
   },
 
   // Create new booking
   createBooking: async (bookingData) => {
-    const response = await api.post('/api/v1/hotel/bookings', bookingData);
+    const response = await api.post('/bookings', bookingData);
     return response.data;
   },
 
   // Update booking
   updateBooking: async (bookingId, bookingData) => {
-    const response = await api.put(`/api/v1/hotel/bookings/${bookingId}`, bookingData);
+    const response = await api.put(`/bookings/${bookingId}`, bookingData);
     return response.data;
   },
 
   // Cancel booking
   cancelBooking: async (bookingId, reason = '') => {
-    const response = await api.patch(`/api/v1/hotel/bookings/${bookingId}/cancel`, { reason });
+    const response = await api.patch(`/bookings/${bookingId}/cancel`, { reason });
     return response.data;
   },
 
   // Check-in booking
   checkIn: async (bookingId, checkInData = {}) => {
-    const response = await api.patch(`/api/v1/hotel/bookings/${bookingId}/check-in`, checkInData);
+    const response = await api.patch(`/bookings/${bookingId}/check-in`, checkInData);
     return response.data;
   },
 
   // Check-out booking
   checkOut: async (bookingId, checkOutData = {}) => {
-    const response = await api.patch(`/api/v1/hotel/bookings/${bookingId}/check-out`, checkOutData);
+    const response = await api.patch(`/bookings/${bookingId}/check-out`, checkOutData);
     return response.data;
   },
 

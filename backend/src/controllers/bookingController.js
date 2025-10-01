@@ -298,6 +298,97 @@ const getBookingById = async (req, res, next) => {
   }
 };
 
+// Update booking (general update)
+const updateBooking = async (req, res, next) => {
+  const trx = await transaction.start(RoomBooking.knex());
+
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const user_id = req.user.id;
+    const user_role = req.user.role;
+
+    const booking = await RoomBooking.query(trx).findById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'Booking not found' }
+      });
+    }
+
+    // Customers can only update their own bookings
+    if (user_role === 'customer' && booking.user_id !== user_id) {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'You can only update your own bookings' }
+      });
+    }
+
+    // Prepare update data
+    const allowedFields = [
+      'room_id', 'check_in_date', 'check_out_date', 'adults', 'children',
+      'status', 'special_requests', 'guest_info'
+    ];
+
+    const filteredData = {};
+    allowedFields.forEach(field => {
+      if (updateData[field] !== undefined) {
+        if (field === 'guest_info' && typeof updateData[field] === 'object') {
+          filteredData[field] = JSON.stringify(updateData[field]);
+        } else {
+          filteredData[field] = updateData[field];
+        }
+      }
+    });
+
+    // Add updated_at timestamp
+    filteredData.updated_at = new Date().toISOString();
+
+    // Update booking
+    await RoomBooking.query(trx)
+      .patch(filteredData)
+      .where('id', id);
+
+    // If room_id changed, update room statuses
+    if (filteredData.room_id && filteredData.room_id !== booking.room_id) {
+      // Free up the old room
+      await trx('rooms')
+        .update({ status: 'available', updated_at: new Date().toISOString() })
+        .where('id', booking.room_id);
+
+      // Occupy the new room
+      await trx('rooms')
+        .update({ status: 'occupied', updated_at: new Date().toISOString() })
+        .where('id', filteredData.room_id);
+    }
+
+    await trx.commit();
+
+    // Fetch updated booking
+    const updatedBooking = await RoomBooking.query()
+      .findById(id)
+      .withGraphFetched('[room.[roomType], customer]');
+
+    res.json({
+      success: true,
+      data: { booking: updatedBooking },
+      message: 'Booking updated successfully'
+    });
+
+  } catch (error) {
+    await trx.rollback();
+    console.error('❌ [BOOKING] Booking update error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'BOOKING_UPDATE_ERROR',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Failed to update booking'
+      }
+    });
+  }
+};
+
 // Update booking status (staff only)
 const updateBookingStatus = async (req, res, next) => {
   const trx = await transaction.start(RoomBooking.knex());
@@ -578,6 +669,7 @@ module.exports = {
   getUserBookings,
   getAllBookings,
   getBookingById,
+  updateBooking,
   updateBookingStatus,
   cancelBooking,
   getBookingCalendar

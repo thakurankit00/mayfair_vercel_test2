@@ -1,4 +1,11 @@
-const db = require('../config/database');
+// Lazy load database to avoid circular dependency
+let db;
+const getDb = () => {
+  if (!db) {
+    db = require('../config/database');
+  }
+  return db;
+};
 
 /**
  * Utility functions for table status management
@@ -10,6 +17,7 @@ const db = require('../config/database');
  * @returns {Promise<string>} - 'booked' or 'available'
  */
 const getTableBookingStatus = async (tableId) => {
+  const db = getDb();
   const today = new Date().toISOString().split('T')[0];
   const reservation = await db('table_reservations')
     .where('table_id', tableId)
@@ -26,6 +34,7 @@ const getTableBookingStatus = async (tableId) => {
  * @returns {Promise<Object>} - Comprehensive status object
  */
 const getComprehensiveTableStatus = async (tableId) => {
+  const db = getDb();
   const today = new Date().toISOString().split('T')[0];
   
   // Check for reservations

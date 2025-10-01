@@ -1,0 +1,8 @@
+🧪 TESTING RESTAURANT ORDER UUID FIX
+====================================
+
+1. Getting users from database:
+✅ Using test user: admin@mayfair.com (ID: 27921375-3f17-40d4-b01b-700ee9c66b23)
+
+2. Getting restaurants:
+❌ Test failed: Cannot read properties of undefined (reading '0')

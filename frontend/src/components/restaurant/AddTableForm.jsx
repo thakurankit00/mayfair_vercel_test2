@@ -16,6 +16,7 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId, existingTab
   const [validationErrors, setValidationErrors] = useState({});
   const [suggestedTableNumber, setSuggestedTableNumber] = useState("");
 
+
   useEffect(() => {
     setFormData(prev => ({ ...prev, restaurant_id: restaurantId || "" }));
   }, [restaurantId]);
@@ -112,6 +113,8 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId, existingTab
     }
   };
 
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -198,11 +201,26 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId, existingTab
       if (err.response) {
         // Handle duplicate table error specifically
         if (err.response.status === 409 || err.response.data?.error?.code === 'DUPLICATE_TABLE') {
-          const conflictingTable = getConflictingTable(formData.table_number);
-          errorMessage = `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
+          const errorData = err.response.data?.error;
+          const existingTableDetails = errorData?.details?.existing_table;
+
+          // Use the server's error message if available, otherwise fallback to default
+          errorMessage = errorData?.message || `Table ${formData.table_number} already exists in this restaurant. Please choose a different table number.`;
+
+          // Create detailed validation error message
+          let detailedMessage = errorMessage;
+          if (existingTableDetails) {
+            detailedMessage += ` (Existing table: ${existingTableDetails.capacity} seats, ${existingTableDetails.location} location, created ${new Date(existingTableDetails.created_at).toLocaleDateString()})`;
+          } else {
+            // Fallback to local lookup if server doesn't provide details
+            const conflictingTable = getConflictingTable(formData.table_number);
+            if (conflictingTable) {
+              detailedMessage += ` (Existing table has ${conflictingTable.capacity} seats)`;
+            }
+          }
 
           setValidationErrors({
-            table_number: errorMessage + (conflictingTable ? ` (Existing table has ${conflictingTable.capacity} seats)` : '')
+            table_number: detailedMessage
           });
         } else if (err.response.data) {
           if (typeof err.response.data === 'string') {
@@ -348,6 +366,8 @@ const AddTableForm = ({ isOpen, onClose, onTableAdded, restaurantId, existingTab
               <option value="false">Inactive</option>
             </select>
           </div>
+
+
 
           <div className="flex justify-end space-x-3 mt-6">
             <button

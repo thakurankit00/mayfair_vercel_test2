@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
+const Notification = require('../models/Notification');
 
 class SocketHandler {
   constructor(io) {
@@ -125,20 +126,22 @@ class SocketHandler {
 
     // Handle role-specific room joining
     socket.on('join-kitchen-room', (role) => {
-      if (['chef', 'bartender'].includes(role)) {
+      // Allow chefs, bartenders, managers, and admins to join kitchen rooms
+      if (['chef', 'bartender'].includes(role) || ['manager', 'admin'].includes(user.role)) {
         socket.join(`kitchen-${role}`);
         this.addUserToRoom(user.id, `kitchen-${role}`);
-        console.log(`👨‍🍳 [SOCKET] ${user.first_name} joined kitchen room: kitchen${role} - socketHandler.js:131`);
-        console.log(`👨‍🍳 [SOCKET] ${user.first_name} current rooms: - socketHandler.js:132`, Array.from(socket.rooms));
+        console.log(`👨‍🍳 [SOCKET] ${user.role} ${user.first_name} joined kitchen room: kitchen-${role} - socketHandler.js:131`);
+        console.log(`👨‍🍳 [SOCKET] ${user.role} ${user.first_name} current rooms: - socketHandler.js:132`, Array.from(socket.rooms));
       }
     });
 
     socket.on('join-waiter-room', () => {
-      if (user.role === 'waiter') {
+      // Allow waiters, managers, and admins to join waiter room
+      if (['waiter', 'manager', 'admin'].includes(user.role)) {
         socket.join('waiters');
         this.addUserToRoom(user.id, 'waiters');
-        console.log(`🍽️ [SOCKET] Waiter ${user.first_name} joined waiters room - socketHandler.js:140`);
-        console.log(`🍽️ [SOCKET] Waiter ${user.first_name} current rooms: - socketHandler.js:141`, Array.from(socket.rooms));
+        console.log(`🍽️ [SOCKET] ${user.role} ${user.first_name} joined waiters room - socketHandler.js:140`);
+        console.log(`🍽️ [SOCKET] ${user.role} ${user.first_name} current rooms: - socketHandler.js:141`, Array.from(socket.rooms));
       }
     });
 
@@ -148,6 +151,20 @@ class SocketHandler {
         this.addUserToRoom(user.id, 'managers');
         console.log(`📋 [SOCKET] Manager ${user.first_name} joined managers room - socketHandler.js:149`);
         console.log(`📋 [SOCKET] Manager ${user.first_name} current rooms: - socketHandler.js:150`, Array.from(socket.rooms));
+      }
+    });
+
+    // Enhanced room joining for multi-role access users (managers/admins)
+    socket.on('join-all-accessible-rooms', () => {
+      if (['manager', 'admin'].includes(user.role)) {
+        // Join all rooms that managers/admins should have access to
+        const rooms = ['managers', 'waiters', 'kitchen-chef', 'kitchen-bartender'];
+        rooms.forEach(room => {
+          socket.join(room);
+          this.addUserToRoom(user.id, room);
+        });
+        console.log(`🔑 [SOCKET] ${user.role} ${user.first_name} joined all accessible rooms: ${rooms.join(', ')} - socketHandler.js:158`);
+        console.log(`🔑 [SOCKET] ${user.role} ${user.first_name} current rooms: - socketHandler.js:159`, Array.from(socket.rooms));
       }
     });
 
@@ -199,31 +216,120 @@ class SocketHandler {
     }
   }
 
+  // Helper method to create and store notifications in database
+  async createAndEmitNotification(notificationData, socketEvent, socketData, targetRooms) {
+    try {
+      // Store notification in database for persistence
+      if (notificationData.user_ids && notificationData.user_ids.length > 0) {
+        await Notification.createForUsers(notificationData.user_ids, {
+          type: notificationData.type,
+          title: notificationData.title,
+          message: notificationData.message,
+          data: notificationData.data,
+          priority: notificationData.priority || 'medium'
+        });
+        console.log(`📋 [NOTIFICATION DB] Stored ${notificationData.user_ids.length} notifications in database`);
+      } else if (notificationData.role) {
+        await Notification.createForRole(notificationData.role, {
+          type: notificationData.type,
+          title: notificationData.title,
+          message: notificationData.message,
+          data: notificationData.data,
+          priority: notificationData.priority || 'medium'
+        });
+        console.log(`📋 [NOTIFICATION DB] Stored notifications for role: ${notificationData.role}`);
+      }
+
+      // Emit real-time notification via socket
+      if (targetRooms && targetRooms.length > 0) {
+        targetRooms.forEach(room => {
+          this.io.to(room).emit(socketEvent, socketData);
+        });
+        console.log(`📡 [SOCKET] Emitted ${socketEvent} to rooms: ${targetRooms.join(', ')}`);
+      }
+    } catch (error) {
+      console.error('❌ [NOTIFICATION] Error creating notification:', error);
+    }
+  }
+
+  // Helper method to get user IDs by role
+  async getUserIdsByRole(role) {
+    try {
+      const users = await db('users')
+        .select('id')
+        .where('role', role)
+        .where('is_active', true);
+      return users.map(user => user.id);
+    } catch (error) {
+      console.error(`❌ [NOTIFICATION] Error getting users for role ${role}:`, error);
+      return [];
+    }
+  }
+
   // Event Handlers
-  handleNewOrderSubmitted(data) {
+  async handleNewOrderSubmitted(data) {
     const { orderId, orderNumber, tableId, kitchenTypes, waiterId, customerInfo } = data;
 
-    // Notify relevant kitchen staff
-    kitchenTypes.forEach(kitchenType => {
+    // Notify relevant kitchen staff with database persistence
+    for (const kitchenType of kitchenTypes) {
+      const role = kitchenType === 'bar' ? 'bartender' : 'chef';
       const roomName = kitchenType === 'bar' ? 'kitchen-bartender' : 'kitchen-chef';
-      this.io.to(roomName).emit('new-kitchen-order', {
+
+      await this.createAndEmitNotification(
+        {
+          role: role,
+          type: 'new-order',
+          title: 'New Order Received',
+          message: `New order #${orderNumber} for ${kitchenType} kitchen`,
+          data: {
+            orderId,
+            orderNumber,
+            tableId,
+            tableNumber: data.tableNumber,
+            kitchenType,
+            customerInfo
+          },
+          priority: 'high'
+        },
+        'new-kitchen-order',
+        {
+          orderId,
+          orderNumber,
+          tableNumber: data.tableNumber,
+          customerInfo,
+          kitchenType,
+          timestamp: new Date()
+        },
+        [roomName, 'managers'] // Include managers room for cross-interface visibility
+      );
+    }
+
+    // Notify managers and admins with database persistence
+    await this.createAndEmitNotification(
+      {
+        role: 'admin',
+        type: 'new-order',
+        title: 'New Order Submitted',
+        message: `Order #${orderNumber} has been submitted`,
+        data: {
+          orderId,
+          orderNumber,
+          tableId,
+          waiterId,
+          customerInfo
+        },
+        priority: 'medium'
+      },
+      'new-order-notification',
+      {
         orderId,
         orderNumber,
-        tableNumber: data.tableNumber,
-        customerInfo,
-        kitchenType,
+        tableId,
+        waiterId,
         timestamp: new Date()
-      });
-    });
-
-    // Notify managers and admins
-    this.io.to('managers').emit('new-order-notification', {
-      orderId,
-      orderNumber,
-      tableId,
-      waiterId,
-      timestamp: new Date()
-    });
+      },
+      ['managers']
+    );
   }
   handleAddOrderItems(data) {
     const {  orderId, orderNumber, tableId, tableNumber, waiterId, customerInfo, newItems, kitchenTypes   } = data;
@@ -264,41 +370,91 @@ class SocketHandler {
   
 
   
-  handleOrderStatusUpdate(data) {
+  async handleOrderStatusUpdate(data) {
     const { orderId, orderNumber, status, userId, userRole, waiterId } = data;
-    
+
     console.log(`📊 [SOCKET] Handling order status update: - socketHandler.js:270`, data);
     console.log(`📊 [SOCKET] Connected users count: ${this.connectedUsers.size} - socketHandler.js:271`);
     console.log(`📊 [SOCKET] Will notify waiter: ${waiterId} - socketHandler.js:272`);
 
-    // Notify the waiter who created the order
-    if (data.waiterId) {
-      console.log(`📊 [SOCKET] Emitting to waiter room: user${data.waiterId} - socketHandler.js:276`);
-      this.io.to(`user-${data.waiterId}`).emit('order-status-updated', {
-        orderId,
-        orderNumber,
-        status,
-        timestamp: new Date()
-      });
-    } else {
-      // Only notify all waiters if no specific waiter is assigned (to avoid duplicates)
-      console.log(`🍽️ [SOCKET] No specific waiter, emitting to waiters room - socketHandler.js:285`);
-      this.io.to('waiters').emit('order-status-updated', {
-        orderId,
-        orderNumber,
-        status,
-        timestamp: new Date()
-      });
-    }
-
-    // Notify managers and admins
-    this.io.to('managers').emit('order-status-updated', {
+    const socketData = {
       orderId,
       orderNumber,
       status,
-      updatedBy: { userId, userRole },
       timestamp: new Date()
-    });
+    };
+
+    // Notify the waiter who created the order with database persistence
+    if (data.waiterId) {
+      console.log(`📊 [SOCKET] Emitting to waiter room: user${data.waiterId} - socketHandler.js:276`);
+
+      await this.createAndEmitNotification(
+        {
+          user_ids: [data.waiterId],
+          type: 'order-update',
+          title: 'Order Status Updated',
+          message: `Order #${orderNumber} is now ${status}`,
+          data: {
+            orderId,
+            orderNumber,
+            status,
+            updatedBy: { userId, userRole }
+          },
+          priority: status === 'ready' ? 'high' : 'medium'
+        },
+        'order-status-updated',
+        socketData,
+        [`user-${data.waiterId}`]
+      );
+    } else {
+      // Only notify all waiters if no specific waiter is assigned (to avoid duplicates)
+      console.log(`🍽️ [SOCKET] No specific waiter, emitting to waiters room - socketHandler.js:285`);
+
+      await this.createAndEmitNotification(
+        {
+          role: 'waiter',
+          type: 'order-update',
+          title: 'Order Status Updated',
+          message: `Order #${orderNumber} is now ${status}`,
+          data: {
+            orderId,
+            orderNumber,
+            status,
+            updatedBy: { userId, userRole }
+          },
+          priority: status === 'ready' ? 'high' : 'medium'
+        },
+        'order-status-updated',
+        socketData,
+        ['waiters', 'managers'] // Include managers room for cross-interface visibility
+      );
+    }
+
+    // Notify managers and admins with database persistence
+    await this.createAndEmitNotification(
+      {
+        role: 'admin',
+        type: 'order-update',
+        title: 'Order Status Updated',
+        message: `Order #${orderNumber} status changed to ${status}`,
+        data: {
+          orderId,
+          orderNumber,
+          status,
+          updatedBy: { userId, userRole }
+        },
+        priority: 'low'
+      },
+      'order-status-updated',
+      {
+        orderId,
+        orderNumber,
+        status,
+        updatedBy: { userId, userRole },
+        timestamp: new Date()
+      },
+      ['managers']
+    );
   }
   async handleOrderItemStatusUpdate(data) {
     const {

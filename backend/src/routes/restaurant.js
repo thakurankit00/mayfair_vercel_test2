@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { upload } = require('../middleware/cloudinaryUpload');
 
 // Import controllers
 const {
@@ -304,10 +305,13 @@ router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'barten
     if (userRole === 'bartender') {
       query = query.where('o.order_type', 'bar');
     } else if (userRole === 'chef') {
-      query = query.whereIn('o.order_type', ['restaurant', 'room_service', 'dine_in']);
+      query = query.whereIn('o.order_type', ['restaurant', 'room_service', 'dine_in', 'takeaway']);
     }
 
     const orders = await query;
+
+    console.log(`🍳 [KITCHEN DASHBOARD] Found ${orders.length} orders for chef`);
+    console.log('🍳 [KITCHEN DASHBOARD] Order types:', orders.map(o => `${o.order_number}(${o.order_type})`));
 
     // Get order items for each order
     const ordersWithItems = await Promise.all(
@@ -358,6 +362,7 @@ router.get('/kitchen/dashboard', authenticateToken, requireRole(['chef', 'barten
       }
     });
 
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.status(200).json({
       success: true,
       data: {

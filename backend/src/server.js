@@ -20,7 +20,9 @@ const dashboardRoutes = require('./routes/dashboard');
 const roomRoutes = require('./routes/rooms');
 const bookingRoutes = require('./routes/bookings');
 const restaurantRoutes = require('./routes/restaurant');
-const uploadRoutes =require ('./routes/upload')
+const uploadRoutes = require('./routes/upload');
+const reportsRoutes = require('./routes/reports');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -31,7 +33,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3001', 'http://localhost:3002', process.env.CORS_ORIGIN].filter(Boolean),
+    origin: ['http://localhost:3001', 'http://localhost:3002','http://192.168.56.1:3001', process.env.CORS_ORIGIN].filter(Boolean),
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -102,9 +104,6 @@ app.use(morgan(process.env.LOG_FORMAT || 'combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Static file serving for uploaded images
-app.use('/uploads', express.static('uploads'));
-
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -127,7 +126,9 @@ app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/restaurant', restaurantRoutes);
 app.use('/api/v1/payments', require('./routes/payments'));
-app.use('/api/v1/upload',uploadRoutes);
+app.use('/api/v1/upload', uploadRoutes);
+app.use('/api/v1/reports', reportsRoutes);
+// app.use('/api/v1/notifications', notificationRoutes); // Temporarily disabled
 // 404 handler
 app.use(notFound);
 
@@ -136,20 +137,20 @@ app.use(errorHandler);
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT} - server.js:135`);
-  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:136`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'} - server.js:137`);
-  console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:138`);
+  console.log(`🚀 Server is running on port ${PORT} - server.js:136`);
+  console.log(`🔌 Socket.io enabled with CORS: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:137`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'} - server.js:138`);
+  console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3001'} - server.js:139`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('⏹️  SIGTERM received, shutting down gracefully - server.js:143');
+  console.log('⏹️  SIGTERM received, shutting down gracefully - server.js:144');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('⏹️  SIGINT received, shutting down gracefully - server.js:148');
+  console.log('⏹️  SIGINT received, shutting down gracefully - server.js:149');
   process.exit(0);
 });
 

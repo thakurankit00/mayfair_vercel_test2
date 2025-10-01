@@ -1,9 +1,68 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import TodayReservationsWidget from '../common/TodayReservationsWidget';
+import ReservationModal from '../common/ReservationModal';
+
 
 const Sidebar = ({ isOpen, closeSidebar }) => {
   const { user, hasAnyRole } = useAuth();
+  const [reservationModalOpen, setReservationModalOpen] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState(null);
+
+  // Handle reservation click from widget
+  const handleReservationClick = (reservation) => {
+    setSelectedReservation(reservation);
+    setReservationModalOpen(true);
+  };
+
+  // State for managing reports navigation expansion
+  const [reportsExpanded, setReportsExpanded] = useState(false);
+
+  // Reports navigation structure
+  const reportItems = [
+    {
+      id: 'reservation-report',
+      label: 'Reservation Report',
+      icon: '📋',
+      path: '/reports/reservation'
+    },
+    {
+      id: 'front-office-report',
+      label: 'Front Office Report',
+      icon: '🏢',
+      path: '/reports/front-office'
+    },
+    {
+      id: 'back-office-report',
+      label: 'Back Office Report',
+      icon: '🏪',
+      path: '/reports/back-office'
+    },
+    {
+      id: 'audit-report',
+      label: 'Audit Report',
+      icon: '📊',
+      path: '/reports/audit'
+    },
+    {
+      id: 'statistical-report',
+      label: 'Statistical Report',
+      icon: '📈',
+      path: '/reports/statistical'
+    },
+    {
+      id: 'graphs-charts',
+      label: 'Graphs & Charts',
+      icon: '📉',
+      path: '/reports/charts'
+    }
+  ];
+
+  // Toggle function for reports expansion
+  const toggleReports = () => {
+    setReportsExpanded(!reportsExpanded);
+  };
 
   // Navigation items based on user roles
   const getNavigationItems = () => {
@@ -104,19 +163,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
       });
     }
 
-    // Reports - for managers and admins only
-    if (hasAnyRole(['manager', 'admin'])) {
-      items.push({
-        name: 'Reports',
-        path: '/reports',
-        icon: (
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        ),
-        roles: ['manager', 'admin']
-      });
-    }
+    // Reports navigation will be integrated directly into the sidebar navigation section
 
     // User Management - for admins only
     if (hasAnyRole(['admin'])) {
@@ -171,7 +218,7 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
       `}>
         <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
           <div className="flex items-center">
-            <div className="h-8 w-8 bg-blue-500 rounded-lg flex items-center justify-center">
+            <div className="h-8 w-8 bg-light-orange rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">MH</span>
             </div>
             <span className="ml-2 text-white font-semibold">Mayfair Hotel</span>
@@ -214,12 +261,78 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
               {item.name}
             </NavLink>
           ))}
+
+          {/* Integrated Reports Navigation - for managers and admins only */}
+          {hasAnyRole(['manager', 'admin']) && (
+            <div className="space-y-1">
+              {/* Reports Dropdown Header */}
+              <button
+                onClick={toggleReports}
+                className="group w-full flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md transition-colors duration-150 ease-in-out text-gray-300 hover:bg-gray-700 hover:text-white"
+              >
+                <div className="flex items-center">
+                  <span className="mr-3 flex-shrink-0">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </span>
+                  Reports
+                </div>
+                <svg
+                  className={`h-4 w-4 transition-transform duration-200 ${
+                    reportsExpanded ? 'rotate-90' : ''
+                  }`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Reports Sub-navigation */}
+              {reportsExpanded && (
+                <div className="ml-4 space-y-1">
+                  {reportItems.map((report) => (
+                    <NavLink
+                      key={report.id}
+                      to={report.path}
+                      onClick={() => {
+                        // Close sidebar on mobile after clicking
+                        if (window.innerWidth < 768) {
+                          closeSidebar();
+                        }
+                      }}
+                      className={({ isActive }) =>
+                        `group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors duration-150 ease-in-out ${
+                          isActive
+                            ? 'bg-gray-700 text-white'
+                            : 'text-gray-400 hover:bg-gray-700 hover:text-gray-300'
+                        }`
+                      }
+                    >
+                      <span className="mr-2 text-base">{report.icon}</span>
+                      <span className="text-xs">{report.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
+
+        {/* Today's Reservations Widget - positioned above user info */}
+        <div className="absolute bottom-20 left-0 right-0 px-2">
+          <TodayReservationsWidget
+            onReservationClick={handleReservationClick}
+            className="mb-2"
+          />
+        </div>
 
         {/* User info in sidebar */}
         <div className="absolute bottom-0 w-full p-4 bg-gray-800">
           <div className="flex items-center">
-            <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-full bg-light-orange flex items-center justify-center">
               <span className="text-white font-medium text-sm">
                 {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
               </span>
@@ -234,6 +347,17 @@ const Sidebar = ({ isOpen, closeSidebar }) => {
             </div>
           </div>
         </div>
+
+        {/* Reservation Modal */}
+        <ReservationModal
+          isOpen={reservationModalOpen}
+          onClose={() => {
+            setReservationModalOpen(false);
+            setSelectedReservation(null);
+          }}
+          selectedReservation={selectedReservation}
+          title="Reservation Details"
+        />
       </div>
     </>
   );

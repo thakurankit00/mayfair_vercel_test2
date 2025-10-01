@@ -1,11 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-
+import { useSocket } from '../../contexts/SocketContext';
+import NotificationDropdown from './NotificationDropdown';
 const Header = ({ toggleSidebar }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notificationRef = useRef(null);
+  const { notifications, unreadCount, clearNotifications, markNotificationAsRead, removeNotification } = useSocket();
+
+  // Close notification dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showNotifications]);
 
   const handleLogout = async () => {
     try {
@@ -14,6 +32,24 @@ const Header = ({ toggleSidebar }) => {
     } catch (error) {
       console.error('Logout failed:', error);
     }
+  };
+
+  // Enhanced notification handlers
+  const handleMarkAllAsRead = () => {
+    notifications.forEach(notification => {
+      if (!notification.read) {
+        markNotificationAsRead(notification.id);
+      }
+    });
+  };
+
+  const handleClearNotification = (notificationId) => {
+    // Remove specific notification completely
+    removeNotification(notificationId);
+  };
+
+  const handleNotificationToggle = () => {
+    setShowNotifications(!showNotifications);
   };
 
   const getRoleDisplay = (role) => {
@@ -54,14 +90,58 @@ const Header = ({ toggleSidebar }) => {
 
           {/* Right side - Notifications and user menu */}
           <div className="flex items-center space-x-4">
-            {/* Notifications bell */}
-            <button className="relative p-2 text-gray-500 hover:text-gray-600 hover:bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-              {/* Notification dot */}
-              <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
+            {/* Enhanced Notifications bell + dropdown */}
+            <div className="relative" ref={notificationRef}>
+              {/* Bell button with enhanced styling */}
+              <button
+                onClick={handleNotificationToggle}
+                className={`
+                  relative p-2 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500
+                  ${showNotifications
+                    ? 'text-blue-600 bg-blue-50'
+                    : 'text-gray-500 hover:text-gray-600 hover:bg-gray-100'
+                  }
+                `}
+              >
+                {/* Enhanced Bell icon with animation */}
+                <svg
+                  className={`h-6 w-6 transition-transform duration-200 ${unreadCount > 0 ? 'animate-pulse' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+
+                {/* Enhanced Badge with animation */}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-5 w-5 text-xs font-bold text-white bg-red-500 rounded-full animate-bounce">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Enhanced Dropdown */}
+              {showNotifications && (
+                <NotificationDropdown
+                  notifications={notifications}
+                  onClose={() => setShowNotifications(false)}
+                  onMarkAsRead={markNotificationAsRead}
+                  onMarkAllAsRead={handleMarkAllAsRead}
+                  onClearAll={() => {
+                    clearNotifications();
+                    setShowNotifications(false);
+                  }}
+                  onClearNotification={handleClearNotification}
+                />
+              )}
+            </div>
+
 
             {/* User profile dropdown */}
             <div className="relative">
@@ -148,7 +228,7 @@ const Header = ({ toggleSidebar }) => {
             </div>
           </div>
         </div>
-      </div>
+      </div>    
     </header>
   );
 };

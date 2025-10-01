@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { bookingApi, roomApi } from '../../services/hotelApi';
 import { useAuth } from '../../contexts/AuthContext';
 
-const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, onSave }) => {
+const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, onSave, rooms: propRooms = [] }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +29,7 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
   useEffect(() => {
     if (booking) {
       // Editing existing booking
+      console.log('🏨 [BOOKING MODAL] Initializing form with booking data:', booking);
       setFormData({
         room_id: booking.room_id || '',
         check_in_date: booking.check_in_date ? booking.check_in_date.split('T')[0] : '',
@@ -71,18 +72,41 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
   // Load available rooms
   useEffect(() => {
     const loadRooms = async () => {
+      // If rooms are provided as props, use them first
+      if (propRooms && propRooms.length > 0) {
+        console.log('🏨 [BOOKING MODAL] Using rooms from props:', propRooms);
+        setRooms(propRooms);
+        return;
+      }
+
+      // Otherwise, fetch from API
       try {
+        console.log('🏨 [BOOKING MODAL] Loading rooms from API...');
         const response = await roomApi.getRooms();
-        setRooms(response.rooms || []);
+        console.log('🏨 [BOOKING MODAL] Rooms response:', response);
+
+        // Handle different response formats
+        let roomsData = [];
+        if (response && response.rooms) {
+          roomsData = response.rooms;
+        } else if (response && response.data && response.data.rooms) {
+          roomsData = response.data.rooms;
+        } else if (Array.isArray(response)) {
+          roomsData = response;
+        }
+
+        console.log('🏨 [BOOKING MODAL] Setting rooms:', roomsData);
+        setRooms(roomsData);
       } catch (err) {
-        console.error('Failed to load rooms:', err);
+        console.error('❌ [BOOKING MODAL] Failed to load rooms:', err);
+        setRooms([]);
       }
     };
-    
+
     if (isOpen) {
       loadRooms();
     }
-  }, [isOpen]);
+  }, [isOpen, propRooms]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -149,7 +173,7 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
 
       if (booking && booking.id) {
         // Update existing booking
-        await bookingApi.updateBookingStatus(booking.id, bookingData);
+        await bookingApi.updateBooking(booking.id, bookingData);
       } else {
         // Create new booking
         await bookingApi.createBooking(bookingData);
@@ -193,7 +217,7 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
           {/* Room Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Room *
+              Room * {rooms.length > 0 && <span className="text-xs text-gray-500">({rooms.length} available)</span>}
             </label>
             <select
               name="room_id"
@@ -203,11 +227,15 @@ const BookingModal = ({ isOpen, onClose, booking = null, selectedDate = null, on
               required
             >
               <option value="">Select a room</option>
-              {rooms.map(room => (
-                <option key={room.id} value={room.id}>
-                  Room {room.room_number} - {room.room_type} (Floor {room.floor})
-                </option>
-              ))}
+              {rooms.length === 0 ? (
+                <option value="" disabled>No rooms available</option>
+              ) : (
+                rooms.map(room => (
+                  <option key={room.id} value={room.id}>
+                    Room {room.room_number} - {room.room_type || room.room_type_name} (Floor {room.floor})
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

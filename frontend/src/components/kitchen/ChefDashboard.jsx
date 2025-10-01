@@ -445,7 +445,7 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onCancelItem, onAcceptOrder,
             Order #{order.orderNumber}
           </h3>
           <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-            <span>Table {order.tableNumber}</span>
+            <span>{order.tableNumber ? `Table ${order.tableNumber}` : 'Takeaway'}</span>
             <span>•</span>
             <span>{order.customerName}</span>
             <span>•</span>
@@ -457,9 +457,15 @@ const OrderItemCard = ({ order, onUpdateItemStatus, onCancelItem, onAcceptOrder,
         </div>
         <div className="text-right">
           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-            order.orderType === 'bar' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
+            order.orderType === 'bar' ? 'bg-purple-100 text-purple-800' :
+            order.orderType === 'takeaway' ? 'bg-orange-100 text-orange-800' :
+            order.orderType === 'room_service' ? 'bg-blue-100 text-blue-800' :
+            'bg-green-100 text-green-800'
           }`}>
-            {order.orderType.charAt(0).toUpperCase() + order.orderType.slice(1)}
+            {order.orderType === 'takeaway' ? 'Takeaway' :
+             order.orderType === 'room_service' ? 'Room Service' :
+             order.orderType === 'dine_in' ? 'Dine In' :
+             order.orderType.charAt(0).toUpperCase() + order.orderType.slice(1)}
           </span>
         </div>
       </div>

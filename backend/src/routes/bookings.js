@@ -59,9 +59,15 @@ router.get('/calendar', requireRole(['manager', 'admin', 'receptionist']), booki
 // Get booking by ID
 router.get('/:id', bookingController.getBookingById);
 
+// Update booking (general update)
+router.put('/:id',
+  requireRole(['manager', 'admin', 'receptionist']),
+  bookingController.updateBooking
+);
+
 // Update booking status (staff only)
-router.patch('/:id/status', 
-  requireRole(['manager', 'admin', 'receptionist']), 
+router.patch('/:id/status',
+  requireRole(['manager', 'admin', 'receptionist']),
   bookingController.updateBookingStatus
 );
 

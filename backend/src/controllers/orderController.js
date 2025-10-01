@@ -15,17 +15,18 @@ const OrderKitchenLog = require('../models/OrderKitchenLog');
 const createOrder = async (req, res) => {
   try {
     const {
-      table_id,
-      table_reservation_id,
       order_type, // 'restaurant', 'bar', 'room_service','dine_in','takeway'
       kitchen_type,//'Bar Kitchen','Main Kitchen'
       restaurant_id, // which restaurant the order is for
-      target_kitchen_id, // which kitchen should prepare the order
       items, // array of { menu_item_id, quantity, special_instructions }
       special_instructions
     } = req.body;
 
-    let room_booking_id = req.body.room_booking_id; // for room service
+    // Handle UUID fields - convert empty strings to null
+    const table_id = req.body.table_id && req.body.table_id !== '' ? req.body.table_id : null;
+    const table_reservation_id = req.body.table_reservation_id && req.body.table_reservation_id !== '' ? req.body.table_reservation_id : null;
+    const target_kitchen_id_input = req.body.target_kitchen_id && req.body.target_kitchen_id !== '' ? req.body.target_kitchen_id : null;
+    let room_booking_id = req.body.room_booking_id && req.body.room_booking_id !== '' ? req.body.room_booking_id : null;
     
     const userId = req.user.id;
     const userRole = req.user.role;
@@ -189,7 +190,7 @@ const createOrder = async (req, res) => {
     }
     
     // Auto-determine target kitchen based on order type and restaurant
-    let finalTargetKitchenId = target_kitchen_id;
+    let finalTargetKitchenId = target_kitchen_id_input;
     if (!finalTargetKitchenId) {
       if (order_type === 'bar') {
         // Find bar kitchen
@@ -200,6 +201,7 @@ const createOrder = async (req, res) => {
           .first();
         finalTargetKitchenId = barKitchen?.id;
       } else {
+        // For all other order types (restaurant, dine_in, takeaway, room_service)
         // Use restaurant's own kitchen or main kitchen
         const restaurantKitchen = await Restaurant.query()
           .where('id', finalRestaurantId)
@@ -207,6 +209,42 @@ const createOrder = async (req, res) => {
           .first();
         finalTargetKitchenId = restaurantKitchen?.id || finalRestaurantId;
       }
+    }
+
+    // Ensure takeaway orders are always assigned to a kitchen
+    if (order_type === 'takeaway' && !finalTargetKitchenId) {
+      // Find the main kitchen if no specific kitchen is assigned
+      const mainKitchen = await Restaurant.query()
+        .where('restaurant_type', 'restaurant')
+        .where('has_kitchen', true)
+        .where('is_active', true)
+        .first();
+      finalTargetKitchenId = mainKitchen?.id;
+      console.log('🥡 [TAKEAWAY] Assigned takeaway order to main kitchen:', finalTargetKitchenId);
+    }
+
+    // Log kitchen assignment for all orders
+    console.log('🍳 [ORDER] Kitchen assignment:', {
+      orderType: order_type,
+      restaurantId: finalRestaurantId,
+      targetKitchenId: finalTargetKitchenId,
+      tableId: table_id
+    });
+
+    // Validate that kitchen assignment was successful
+    if (!finalTargetKitchenId) {
+      console.error('❌ [ORDER] No kitchen assigned for order:', {
+        orderType: order_type,
+        restaurantId: finalRestaurantId,
+        tableId: table_id
+      });
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'NO_KITCHEN_ASSIGNED',
+          message: 'Unable to assign order to a kitchen. Please contact support.'
+        }
+      });
     }
     
     // For customers, verify they have a reservation for this table
@@ -285,13 +323,13 @@ const createOrder = async (req, res) => {
           id: orderId,
           order_number: orderNumber,
           user_id: userId,
-          table_id,
+          table_id: table_id || null,
           table_reservation_id: table_reservation_id || null,
           order_type,
           room_booking_id: room_booking_id || null,
           waiter_id: userRole === 'waiter' ? userId : null,
           restaurant_id: finalRestaurantId,
-          target_kitchen_id: finalTargetKitchenId,
+          target_kitchen_id: finalTargetKitchenId || null,
           // kitchen_type:kitchen_type,
           kitchen_status: 'pending',
           kitchen_assigned_at: new Date(),
@@ -1664,7 +1702,16 @@ const getKitchenOrders = async (req, res) => {
     }
     
     const orders = await query;
-    
+
+    console.log(`🍳 [KITCHEN] Retrieved ${orders.length} orders for kitchen ${kitchenId}:`,
+      orders.map(o => ({
+        orderNumber: o.order_number,
+        orderType: o.order_type,
+        tableNumber: o.table_number || 'Takeaway',
+        kitchenStatus: o.kitchen_status
+      }))
+    );
+
     // Get order items for each order
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {

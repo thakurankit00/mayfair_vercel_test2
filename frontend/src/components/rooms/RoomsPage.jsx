@@ -5,6 +5,7 @@ import RoomResults from './RoomResults';
 import PlatformIntegration from './PlatformIntegration';
 import RoomImageManager from './RoomImageManager';
 import LoadingSpinner from '../common/LoadingSpinner';
+import BookingCalendar from '../hotel/BookingCalendar';
 
 const RoomsPage = () => {
   const [availableRooms, setAvailableRooms] = useState([]);
@@ -13,11 +14,13 @@ const RoomsPage = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('search');
   const [roomTypes, setRoomTypes] = useState([]);
+  const [showAvailableRoomsSection, setShowAvailableRoomsSection] = useState(false);
   
   // Modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [showNoRoomsModal, setShowNoRoomsModal] = useState(false);
   const [selectedRoomType, setSelectedRoomType] = useState(null);
 
   // Load room types on component mount
@@ -38,10 +41,13 @@ const RoomsPage = () => {
     setAvailableRooms(rooms);
     setSearchCriteria(criteria);
     setError('');
+    setShowAvailableRoomsSection(true);
     
-    // Switch to results tab if rooms found
+    // Switch to results tab if rooms found, show modal if no rooms
     if (rooms && rooms.length > 0) {
       setActiveTab('results');
+    } else if (rooms && rooms.length === 0) {
+      setShowNoRoomsModal(true);
     }
   };
 
@@ -93,7 +99,8 @@ const RoomsPage = () => {
 
   const tabs = [
     { id: 'search', name: 'Check Availability', icon: '🔍' },
-    { id: 'results', name: 'Available Rooms', icon: '🏨', badge: availableRooms.length },
+    ...(showAvailableRoomsSection ? [{ id: 'results', name: 'Available Rooms', icon: '🏨', badge: availableRooms.length }] : []),
+    { id: 'calendar', name: 'Booking Calendar', icon: '📅' },
     { id: 'management', name: 'Room Management', icon: '⚙️' },
     { id: 'integrations', name: 'Platform Sync', icon: '🔗' }
   ];
@@ -148,11 +155,40 @@ const RoomsPage = () => {
       <div className="min-h-96">
         {activeTab === 'search' && (
           <div className="space-y-6">
-            <AvailabilityChecker
-              onAvailabilityCheck={handleAvailabilityCheck}
-              selectedDates={searchCriteria}
-              onDateChange={setSearchCriteria}
-            />
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="lg:w-1/2">
+                <AvailabilityChecker
+                  onAvailabilityCheck={handleAvailabilityCheck}
+                  selectedDates={searchCriteria}
+                  onDateChange={setSearchCriteria}
+                />
+              </div>
+              <div className="lg:w-1/2">
+                <div className="bg-gray-50 rounded-lg p-6 h-full">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Room Status</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {roomTypes.reduce((sum, type) => sum + (type.totalRooms || 0), 0)}
+                      </div>
+                      <div className="text-sm text-gray-600">Total Rooms</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                      <div className="text-2xl font-bold text-green-600">
+                        <RoomAvailabilityCounter type="available" />
+                      </div>
+                      <div className="text-sm text-gray-600">Available Today</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                      <div className="text-2xl font-bold text-orange-600">
+                        <RoomAvailabilityCounter type="booked" />
+                      </div>
+                      <div className="text-sm text-gray-600">Booked Today</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-md p-4">
@@ -171,31 +207,6 @@ const RoomsPage = () => {
                 </div>
               </div>
             )}
-
-            {/* Quick Stats */}
-            <div className="bg-gray-50 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Room Status</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {roomTypes.reduce((sum, type) => sum + (type.totalRooms || 0), 0)}
-                  </div>
-                  <div className="text-sm text-gray-600">Total Rooms</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-2xl font-bold text-green-600">
-                    <RoomAvailabilityCounter type="available" />
-                  </div>
-                  <div className="text-sm text-gray-600">Available Today</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-2xl font-bold text-orange-600">
-                    <RoomAvailabilityCounter type="booked" />
-                  </div>
-                  <div className="text-sm text-gray-600">Booked Today</div>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -264,6 +275,10 @@ const RoomsPage = () => {
           </div>
         )}
 
+        {activeTab === 'calendar' && (
+          <BookingCalendar />
+        )}
+
         {activeTab === 'integrations' && (
           <PlatformIntegration roomTypes={roomTypes} />
         )}
@@ -301,6 +316,18 @@ const RoomsPage = () => {
             setSelectedRoomType(null);
           }}
           onImagesUpdated={handleImagesUpdated}
+        />
+      )}
+
+      {/* No Rooms Available Modal */}
+      {showNoRoomsModal && searchCriteria && (
+        <NoRoomsAvailableModal
+          searchCriteria={searchCriteria}
+          onClose={() => setShowNoRoomsModal(false)}
+          onTryDifferentDates={() => {
+            setShowNoRoomsModal(false);
+            setActiveTab('search');
+          }}
         />
       )}
     </div>
@@ -808,6 +835,150 @@ const RoomAvailabilityCounter = ({ type }) => {
   }
 
   return <span>{count}</span>;
+};
+
+// No Rooms Available Modal Component
+const NoRoomsAvailableModal = ({ searchCriteria, onClose, onTryDifferentDates }) => {
+  const [showContactPopup, setShowContactPopup] = useState(false);
+  
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const handleContactUs = () => {
+    setShowContactPopup(true);
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+
+        <div className="bg-white rounded-lg w-full max-w-md">
+
+          {/* Header */}
+
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+
+            <h3 className="text-lg font-semibold text-gray-900">No Rooms Available</h3>
+
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+
+
+              </svg>
+
+            </button>
+
+          </div>
+
+
+
+          {/* Content */}
+
+          <div className="p-6">
+
+            <p className="text-gray-700 mb-3">
+
+              No rooms are available for the selected dates. Please try different dates or contact us for assistance.
+
+            </p>
+
+            <div className="bg-orange-50 border border-orange-200 rounded-md p-3">
+
+              <h4 className="text-sm font-medium text-orange-800 mb-2">Your Search:</h4>
+
+              <div className="text-sm text-orange-700 space-y-1">
+
+                <div><strong>Check-in:</strong> {formatDate(searchCriteria.checkInDate)}</div>
+
+                <div><strong>Check-out:</strong> {formatDate(searchCriteria.checkOutDate)}</div>
+
+                <div>
+
+                  <strong>Guests:</strong> {searchCriteria.adults} adult{searchCriteria.adults !== 1 ? 's' : ''}
+
+                  {searchCriteria.children > 0 && `, ${searchCriteria.children} child${searchCriteria.children !== 1 ? 'ren' : ''}`}
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+
+          {/* Actions */}
+
+          <div className="flex flex-col sm:flex-row gap-3 p-6 pt-0">
+
+            <button onClick={onTryDifferentDates} className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium transition-colors">
+
+              Try Different Dates
+
+            </button>
+
+            <button onClick={handleContactUs} className="flex-1 bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 font-medium transition-colors">
+              Contact Us
+            </button>
+
+            <button onClick={onClose} className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 font-medium transition-colors">
+
+              Close
+
+            </button>
+
+          </div>
+
+
+
+        </div>
+        
+        {/* Contact Info Popup */}
+        {showContactPopup && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-60 p-4">
+            <div className="bg-white rounded-lg w-full max-w-sm p-6 text-center shadow-xl">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Mayfair Hotel</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-center space-x-2">
+                  <span className="text-blue-600">📞</span>
+                  <a href="tel:+919816612006" className="text-blue-600 hover:text-blue-800 font-medium">
+                    +91-98166-12006
+                  </a>
+                </div>
+                <div className="flex items-center justify-center space-x-2">
+                  <span className="text-green-600">📧</span>
+                  <a href="mailto:mayfairmnd@gmail.com" className="text-green-600 hover:text-green-800 font-medium">
+                    mayfairmnd@gmail.com
+                  </a>
+                </div>
+                <div className="flex items-center justify-center space-x-2">
+                <span className="text-red-600">.</span>
+                <span className="text-green-600 font-medium">
+                 📍 adjoining Kargil Park, Seri Bazar, Mandi, Himachal Pradesh 175001
+                </span>
+                 </div>
+
+              </div>
+              <button
+                onClick={() => setShowContactPopup(false)}
+                className="mt-4 bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 font-medium transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+    </div>
+  );
 };
 
 export default RoomsPage;

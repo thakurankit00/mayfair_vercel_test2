@@ -2,10 +2,65 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { bookingApi } from '../../services/hotelApi';
 import LoadingSpinner from '../common/LoadingSpinner';
-import DatePicker from '../common/DatePicker';
 import CalendarGrid from './CalendarGrid';
 import BookingTooltip from './BookingTooltip';
 import BookingModal from './BookingModal';
+import DateBookingsModal from './DateBookingsModal';
+
+// New inline component for Month and Year selection
+const MonthYearPicker = ({ selectedDate, onDateChange, label }) => {
+  const currentMonth = selectedDate.getMonth();
+  const currentYear = selectedDate.getFullYear();
+
+  const handleMonthChange = (e) => {
+    const newMonth = parseInt(e.target.value, 10);
+    const newDate = new Date(currentYear, newMonth, 1);
+    onDateChange(newDate);
+  };
+
+  const handleYearChange = (e) => {
+    const newYear = parseInt(e.target.value, 10);
+    const newDate = new Date(newYear, currentMonth, 1);
+    onDateChange(newDate);
+  };
+
+  // Generate options for months
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    value: i,
+    label: new Date(0, i).toLocaleString('en-US', { month: 'long' })
+  }));
+
+  // Generate options for years (current year +/- 10 years)
+  const years = Array.from({ length: 21 }, (_, i) => currentYear - 10 + i);
+
+  return (
+    <div className="w-full sm:w-52">
+      <label className="block text-xs font-medium text-gray-700 mb-1">
+        {label}
+      </label>
+      <div className="flex space-x-2">
+        <select
+          value={currentMonth}
+          onChange={handleMonthChange}
+          className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {months.map(month => (
+            <option key={month.value} value={month.value}>{month.label}</option>
+          ))}
+        </select>
+        <select
+          value={currentYear}
+          onChange={handleYearChange}
+          className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {years.map(year => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+};
 
 const BookingCalendar = () => {
   const { user } = useAuth();
@@ -36,6 +91,11 @@ const BookingCalendar = () => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // Date bookings modal state
+  const [showDateBookingsModal, setShowDateBookingsModal] = useState(false);
+  const [selectedDateBookings, setSelectedDateBookings] = useState([]);
+  const [selectedDateForBookings, setSelectedDateForBookings] = useState(null);
 
   // Calendar view mode state
   const [calendarViewMode, setCalendarViewMode] = useState('monthly'); // 'monthly' or 'timeline'
@@ -177,6 +237,7 @@ const BookingCalendar = () => {
 
   // Handle booking click for editing
   const handleBookingClick = (booking) => {
+    console.log('📅 [BOOKING CALENDAR] Booking clicked for editing:', booking);
     setSelectedBooking(booking);
     setSelectedDate(null);
     setShowBookingModal(true);
@@ -230,6 +291,19 @@ const BookingCalendar = () => {
     loadCalendarData();
   };
 
+  // Handle date bookings modal
+  const handleDateBookingsClick = (date, bookings) => {
+    setSelectedDateForBookings(date);
+    setSelectedDateBookings(bookings);
+    setShowDateBookingsModal(true);
+  };
+
+  const handleDateBookingsModalClose = () => {
+    setShowDateBookingsModal(false);
+    setSelectedDateBookings([]);
+    setSelectedDateForBookings(null);
+  };
+
   if (!['receptionist', 'manager', 'admin'].includes(user?.role)) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -244,7 +318,7 @@ const BookingCalendar = () => {
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Fixed Header - Always visible */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-30">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4  z-30">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Booking Calendar</h1>
@@ -272,67 +346,9 @@ const BookingCalendar = () => {
       </div>
 
       {/* Fixed Controls - Part of sticky header */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sticky top-[120px] sm:top-[140px] z-20">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3  sm:top-[140px] z-20">
         <div className="flex flex-col gap-3 sm:gap-4">
-          {/* Navigation */}
-          <div className="flex items-center justify-center sm:justify-start">
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => navigateCalendar(-1)}
-                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 min-w-32 sm:min-w-40 text-center">
-                {formatDateRangeDisplay()}
-              </h2>
-              
-              <button
-                onClick={() => navigateCalendar(1)}
-                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 ml-4">
-              <button
-                onClick={() => setCurrentDate(new Date())}
-                className="px-3 py-1 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"
-              >
-                Today
-              </button>
-              
-              {/* Quick Jump Buttons */}
-              <div className="flex gap-1">
-                <button
-                  onClick={() => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() + 1);
-                    setCurrentDate(date);
-                  }}
-                  className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
-                >
-                  Next Month
-                </button>
-                <button
-                  onClick={() => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() + 3);
-                    setCurrentDate(date);
-                  }}
-                  className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
-                >
-                  +3 Months
-                </button>
-              </div>
-            </div>
-          </div>
+          
 
           {/* View Controls */}
           <div className="flex flex-col gap-4">
@@ -357,15 +373,12 @@ const BookingCalendar = () => {
                 </select>
               </div>
 
-              {/* Date Picker */}
-              <div className="w-full sm:w-52">
-                <DatePicker
-                  selectedDate={currentDate}
-                  onDateChange={setCurrentDate}
-                  viewType={viewType}
-                  label={`Jump to ${viewType}`}
-                />
-              </div>
+              {/* New Modern Month/Year Picker */}
+              <MonthYearPicker
+                selectedDate={currentDate}
+                onDateChange={setCurrentDate}
+                label="Jump to Month/Year"
+              />
 
               {/* Calendar View Mode Toggle */}
               <div className="">
@@ -443,8 +456,8 @@ const BookingCalendar = () => {
         </div>
       </div>
 
-      {/* Main Calendar Container - Single Scroll Area */}
-      <div className="flex-1 overflow-auto">
+      {/* Main Calendar Container - Only Date Grid Scrolls */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <LoadingSpinner />
@@ -473,6 +486,7 @@ const BookingCalendar = () => {
             onBookingClick={handleBookingClick}
             onDateClick={handleDateClick}
             onBookingUpdate={handleBookingUpdate}
+            onDateBookingsClick={handleDateBookingsClick}
           />
         )}
       </div>
@@ -492,6 +506,16 @@ const BookingCalendar = () => {
         booking={selectedBooking}
         selectedDate={selectedDate}
         onSave={handleBookingSave}
+        rooms={calendarData?.rooms || []}
+      />
+
+      {/* Date Bookings Modal */}
+      <DateBookingsModal
+        isOpen={showDateBookingsModal}
+        onClose={handleDateBookingsModalClose}
+        date={selectedDateForBookings}
+        bookings={selectedDateBookings}
+        onBookingClick={handleBookingClick}
       />
     </div>
   );

@@ -3,9 +3,45 @@ const { processAndStoreImage, deleteImageFile } = require('../middleware/upload'
 const path = require('path');
 
 const roomController = {
+  // Get all rooms (for booking management)
+  getRooms: async (req, res) => {
+    try {
+      const rooms = await db('rooms as r')
+        .select(
+          'r.id',
+          'r.room_number',
+          'r.floor',
+          'r.status',
+          'rt.name as room_type',
+          'rt.name as room_type_name',
+          'rt.id as room_type_id',
+          'rt.base_price',
+          'rt.max_occupancy'
+        )
+        .join('room_types as rt', 'r.room_type_id', 'rt.id')
+        .orderBy('r.room_number', 'asc');
+
+      res.json({
+        success: true,
+        rooms: rooms
+      });
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch rooms',
+        error: error.message
+      });
+    }
+  },
+
   // Get occupied rooms for room service
   getOccupiedRooms: async (req, res) => {
     try {
+      console.log('🏨 [ROOMS] getOccupiedRooms called');
+      console.log('🏨 [ROOMS] User info:', req.user?.role, req.user?.email);
+      console.log('🏨 [ROOMS] Headers:', req.headers.authorization ? 'Token present' : 'No token');
+
       const occupiedRooms = await db('room_bookings as rb')
         .select(
           'rb.id',
@@ -47,6 +83,9 @@ const roomController = {
           booking_status: room.booking_status
         };
       });
+
+      console.log('🏨 [ROOMS] Found occupied rooms:', formattedRooms.length);
+      console.log('🏨 [ROOMS] Occupied rooms data:', formattedRooms);
 
       res.json({
         success: true,
