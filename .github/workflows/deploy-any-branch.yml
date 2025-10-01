@@ -1,72 +1,53 @@
-name: Deploy Any Branch - Dual Environment (Self-Sufficient)
-
-# This workflow can deploy ANY branch to BOTH environments simultaneously!
-# ✅ Preview: dev.mayfairmandi.com | ✅ Production: prod.mayfairmandi.com
-# No dependency on master branch - completely self-sufficient!
+name: Deploy to Multiple Environments
 
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to deploy'
-        required: true
-        default: 'master'
-      deploy_preview:
-        description: 'deploy dev'
+      deploy_dev:
+        description: 'Deploy to Dev'
         required: false
         type: boolean
         default: true
-      deploy_production:
-        description: 'deploy prod'
+      deploy_prod:
+        description: 'Deploy to Prod'
         required: false
         type: boolean
         default: false
+
+env:
+  NODE_VERSION: '18'
+  BRANCH_NAME: master
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     
-    # Prevent concurrent deployments to the same branch
     concurrency:
-      group: vercel-deploy-dual-${{ github.event.inputs.branch }}
+      group: vercel-deploy-${{ github.ref }}
       cancel-in-progress: true
 
     steps:
-      - name: 🔍 Validate deployment selection
+      - name: Validate Deployment Selection
         run: |
-          if [ "${{ github.event.inputs.deploy_preview }}" != "true" ] && [ "${{ github.event.inputs.deploy_production }}" != "true" ]; then
-            echo "❌ Error: At least one environment must be selected for deployment!"
-            echo "Please check either 'Deploy to Preview' or 'Deploy to Production' (or both)"
+          if [ "${{ inputs.deploy_dev }}" != "true" ] && [ "${{ inputs.deploy_prod }}" != "true" ]; then
+            echo "Error: At least one environment must be selected"
             exit 1
           fi
 
-          echo "✅ Deployment validation passed!"
-          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
-            echo "  → Preview deployment: ENABLED (dev.mayfairmandi.com)"
-          fi
-          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
-            echo "  → Production deployment: ENABLED (prod.mayfairmandi.com)"
-          fi
-
-      - name: 📥 Checkout target branch (to deploy)
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ env.BRANCH_NAME }}
           fetch-depth: 0
-          path: target-branch
 
-      - name: � Generate Vercel support files
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Generate Vercel Configuration
         run: |
-          echo "📦 Generating Vercel support files for ${{ github.event.inputs.branch }}..."
-
-          # Create necessary directories
-          mkdir -p target-branch/api
-          mkdir -p target-branch/frontend/public
-          mkdir -p target-branch/frontend/src/contexts
-
-          # Generate vercel.json
-          echo "  → Creating vercel.json"
-          cat > target-branch/vercel.json << 'EOF'
+          cat > vercel.json << 'EOF'
           {
             "version": 2,
             "builds": [
@@ -88,83 +69,10 @@ jobs:
           }
           EOF
 
-          # Generate .vercelignore
-          echo "  → Creating .vercelignore"
-          cat > target-branch/.vercelignore << 'EOF'
-          # Dependencies (will be installed by Vercel)
-          node_modules
-
-          # Testing
-          coverage
-          *.test.js
-          *.spec.js
-          tests/
-          __tests__/
-
-          # Development
-          .env.local
-          .env.development
-          .env.test
-
-          # IDE
-          .vscode
-          .idea
-          *.swp
-          *.swo
-          *~
-
-          # OS
-          .DS_Store
-          Thumbs.db
-
-          # Docker
-          Dockerfile
-          docker-compose.yml
-          .dockerignore
-
-          # Git
-          .git
-          .gitignore
-
-          # Documentation
-          *.md
-          !README.md
-          docs/
-
-          # Database
-          database/
-          *.sql
-
-          # Mobile
-          mobile/
-
-          # Backend development files
-          backend/tests
-          backend/scripts
-
-          # Misc
-          .vercel
-          EOF
-
-          # Generate api/index.js (fallback entry point)
-          echo "  → Creating api/index.js"
-          cat > target-branch/api/index.js << 'EOF'
-          // Generic Vercel entry to make branch deploys work even without vercel.json
-          // Exposes the Express app exported by backend/index.js as a Serverless Function
-
-          const app = require('../backend/index.js');
-
-          module.exports = app;
-          EOF
-
-          # Generate backend/index.js (Vercel entry point)
-          echo "  → Creating backend/index.js"
-          cat > target-branch/backend/index.js << 'EOF'
-          /**
-           * Vercel Entry Point for Mayfair Hotel Management
-           * Serverless-friendly Express app (no app.listen) that mounts API routes and serves frontend
-           */
-
+      - name: Generate Backend Entry Point
+        run: |
+          mkdir -p api
+          cat > backend/index.js << 'EOF'
           const express = require('express');
           const cors = require('cors');
           const path = require('path');
@@ -172,265 +80,111 @@ jobs:
 
           const app = express();
 
-          // Middleware
           app.use(cors());
           app.use(express.json({ limit: '50mb' }));
           app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-          // Health check endpoint
           app.get('/api/health', (req, res) => {
             res.json({ status: 'OK', timestamp: new Date().toISOString() });
           });
 
-          // Auto-mount all route files under /api/v1
-          try {
-            const routesDir = path.join(__dirname, 'src', 'routes');
-            if (fs.existsSync(routesDir)) {
-              const files = fs.readdirSync(routesDir).filter(f => f.endsWith('.js'));
-              files.forEach((file) => {
+          // Auto-mount API routes
+          const routesDir = path.join(__dirname, 'src', 'routes');
+          if (fs.existsSync(routesDir)) {
+            fs.readdirSync(routesDir)
+              .filter(f => f.endsWith('.js'))
+              .forEach(file => {
                 const base = file.replace(/\.js$/i, '');
                 try {
                   const router = require(path.join(routesDir, file));
                   if (router && typeof router === 'function') {
                     app.use(`/api/v1/${base}`, router);
-                    console.log(`Mounted /api/v1/${base}`);
-                  } else {
-                    console.warn(`Skipped ${file}: export is not an Express router`);
                   }
                 } catch (err) {
-                  console.log(`Route "${file}" not available: ${err.message}`);
+                  console.log(`Route ${file} not available:`, err.message);
                 }
               });
-            }
-          } catch (err) {
-            console.log('Routes directory not found or error mounting routes:', err.message);
           }
 
-          // Serve frontend static files
-          const frontendBuildPath = path.join(__dirname, '..', 'frontend', 'build');
-          if (fs.existsSync(frontendBuildPath)) {
-            app.use(express.static(frontendBuildPath));
-
-            // Handle React Router (serve index.html for all non-API routes)
+          // Serve frontend
+          const frontendPath = path.join(__dirname, '..', 'frontend', 'build');
+          if (fs.existsSync(frontendPath)) {
+            app.use(express.static(frontendPath));
             app.get('*', (req, res) => {
               if (!req.path.startsWith('/api')) {
-                res.sendFile(path.join(frontendBuildPath, 'index.html'));
-              } else {
-                res.status(404).json({ error: 'API endpoint not found' });
-              }
-            });
-          } else {
-            app.get('*', (req, res) => {
-              if (!req.path.startsWith('/api')) {
-                res.send('<h1>Frontend not built yet</h1><p>Run npm run build:production in frontend directory</p>');
+                res.sendFile(path.join(frontendPath, 'index.html'));
               } else {
                 res.status(404).json({ error: 'API endpoint not found' });
               }
             });
           }
 
-          // Export for Vercel
           module.exports = app;
           EOF
 
-          echo "✅ Backend files generated!"
-
-      - name: 🔧 Generate frontend files
+      - name: Generate Frontend Build Configuration
         run: |
-          echo "� Generating frontend Vercel files..."
-
-          # Generate frontend/build-production.js
-          echo "  → Creating frontend/build-production.js"
-          cat > target-branch/frontend/build-production.js << 'EOF'
+          mkdir -p frontend/public
+          
+          # Build script
+          cat > frontend/build-production.js << 'EOF'
           #!/usr/bin/env node
-
           const { spawn } = require('child_process');
 
-          console.log('🔧 Building frontend for production with ESLint disabled...');
-
-          const buildProcess = spawn('npm', ['run', 'build'], {
+          const build = spawn('npm', ['run', 'build'], {
             stdio: 'inherit',
             env: {
               ...process.env,
               DISABLE_ESLINT_PLUGIN: 'true',
-              ESLint_NO_DEV_ERRORS: 'true',
               CI: 'false',
               GENERATE_SOURCEMAP: 'false'
             }
           });
 
-          buildProcess.on('close', (code) => {
-            if (code === 0) {
-              console.log('✅ Frontend build completed successfully!');
-            } else {
-              console.error('❌ Frontend build failed with code:', code);
-              process.exit(code);
-            }
-          });
-
-          buildProcess.on('error', (error) => {
-            console.error('❌ Build process error:', error);
-            process.exit(1);
-          });
+          build.on('close', code => process.exit(code));
           EOF
 
-          # Generate frontend/.env.production
-          echo "  → Creating frontend/.env.production"
-          cat > target-branch/frontend/.env.production << 'EOF'
-          # Frontend production build vars (Create React App)
-          # These are safe to commit (no secrets); only REACT_APP_* are exposed to the browser
-
-          # Use same-origin API under /api/v1 (routed to backend by vercel.json)
+          # Environment variables
+          cat > frontend/.env.production << 'EOF'
           REACT_APP_API_URL=/api/v1
-
-          # Socket URL will be dynamically set to window.location.origin in production
           REACT_APP_SOCKET_URL=
-          REACT_APP_BACKEND_URL=
-
-          # Build optimizations
           GENERATE_SOURCEMAP=false
-          REACT_APP_VERSION=1.0.0
           DISABLE_ESLINT_PLUGIN=true
-          ESLint_NO_DEV_ERRORS=true
           CI=false
           EOF
 
-          # Generate frontend/public/manifest.json
-          echo "  → Creating frontend/public/manifest.json"
-          cat > target-branch/frontend/public/manifest.json << 'EOF'
+          # Manifest
+          cat > frontend/public/manifest.json << 'EOF'
           {
-            "short_name": "Mayfair Hotel",
-            "name": "Mayfair Hotel Management System",
-            "icons": [
-              {
-                "src": "favicon.ico",
-                "sizes": "64x64 32x32 24x24 16x16",
-                "type": "image/x-icon"
-              }
-            ],
+            "short_name": "App",
+            "name": "Application",
             "start_url": ".",
             "display": "standalone",
             "theme_color": "#1976d2",
-            "background_color": "#ffffff",
-            "description": "Hotel Management System for Mayfair Hotel"
+            "background_color": "#ffffff"
           }
           EOF
 
-          echo "✅ Frontend files generated!"
-
-      - name: 🔧 Update SocketContext for production
+      - name: Update Package Scripts
         run: |
-          echo "�📝 Updating SocketContext.jsx for production deployment..."
-
-          # Check if SocketContext.jsx exists and update it
-          if [ -f "target-branch/frontend/src/contexts/SocketContext.jsx" ]; then
-            echo "  → Updating existing SocketContext.jsx"
-            # Create a backup
-            cp target-branch/frontend/src/contexts/SocketContext.jsx target-branch/frontend/src/contexts/SocketContext.jsx.backup
-
-            # Update the socket URL logic
-            sed -i 's|http://localhost:3000|window.location.origin|g' target-branch/frontend/src/contexts/SocketContext.jsx
-
-            # Add production URL logic if not present
-            if ! grep -q "window.location.origin" target-branch/frontend/src/contexts/SocketContext.jsx; then
-              echo "  → Adding production URL logic to SocketContext.jsx"
-              sed -i 's|const socketUrl = .*|const socketUrl = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_BACKEND_URL || (process.env.NODE_ENV === "production" ? window.location.origin : "http://localhost:3000");|g' target-branch/frontend/src/contexts/SocketContext.jsx
-            fi
-
-            echo "    ✓ SocketContext.jsx updated for production"
-          else
-            echo "  ⚠️ SocketContext.jsx not found - skipping update"
-          fi
-
-          echo "✅ SocketContext update complete!"
-
-      - name: 🔧 Update package.json files
-        run: |
-          echo "📝 Updating package.json files with Vercel scripts..."
-
-          # Install jq for JSON manipulation
           sudo apt-get update && sudo apt-get install -y jq
           
-          # Update backend/package.json
-          if [ -f "target-branch/backend/package.json" ]; then
-            echo "  → Updating backend/package.json"
+          if [ -f "backend/package.json" ]; then
             jq '.scripts.postinstall = "cd ../frontend && npm install && npm run build:production" | 
                 .scripts["vercel-build"] = "cd ../frontend && npm install && npm run build" |
                 .scripts.start = "node index.js"' \
-              target-branch/backend/package.json > temp-backend.json && \
-              mv temp-backend.json target-branch/backend/package.json
-            echo "    ✓ Added postinstall, vercel-build, and start scripts"
+              backend/package.json > temp.json && mv temp.json backend/package.json
           fi
           
-          # Update frontend/package.json
-          if [ -f "target-branch/frontend/package.json" ]; then
-            echo "  → Updating frontend/package.json"
-            jq '.scripts["build:production"] = "node build-production.js" |
-                .eslintConfig.rules = {
-                  "no-unused-vars": "off",
-                  "react-hooks/exhaustive-deps": "off", 
-                  "no-self-compare": "off",
-                  "default-case": "off",
-                  "import/no-anonymous-default-export": "off"
-                }' \
-              target-branch/frontend/package.json > temp-frontend.json && \
-              mv temp-frontend.json target-branch/frontend/package.json
-            echo "    ✓ Added build:production script and ESLint rules"
+          if [ -f "frontend/package.json" ]; then
+            jq '.scripts["build:production"] = "node build-production.js"' \
+              frontend/package.json > temp.json && mv temp.json frontend/package.json
           fi
-          
-          echo "✅ Package.json files updated!"
 
-      - name: 🔍 Verify deployment readiness
-        run: |
-          echo "🔍 Verifying all required files are present..."
-          cd target-branch
-          
-          # Check critical files
-          files=(
-            "vercel.json"
-            "backend/index.js"
-            "frontend/public/index.html"
-            "frontend/build-production.js"
-            "frontend/.env.production"
-            "frontend/public/manifest.json"
-          )
-          
-          for file in "${files[@]}"; do
-            if [ -f "$file" ]; then
-              echo "  ✓ $file exists"
-            else
-              echo "  ❌ $file missing!"
-              exit 1
-            fi
-          done
-          
-          # Check package.json scripts
-          if grep -q '"build:production"' frontend/package.json; then
-            echo "  ✓ frontend/package.json has build:production script"
-          else
-            echo "  ❌ frontend/package.json missing build:production script!"
-            exit 1
-          fi
-          
-          if grep -q '"postinstall"' backend/package.json; then
-            echo "  ✓ backend/package.json has postinstall script"
-          else
-            echo "  ❌ backend/package.json missing postinstall script!"
-            exit 1
-          fi
-          
-          echo "✅ All files verified - ready for deployment!"
-
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: 📦 Install Vercel CLI
+      - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
-      - name: 🔗 Link Vercel Project
-        working-directory: ./target-branch
+      - name: Link Vercel Project
         run: |
           vercel link --yes \
             --token=${{ secrets.VERCEL_TOKEN }} \
@@ -440,83 +194,66 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: 🚀 Deploy to Preview Environment
-        id: deploy_preview
-        if: ${{ github.event.inputs.deploy_preview == 'true' }}
-        working-directory: ./target-branch
+      - name: Deploy to Dev
+        id: dev
+        if: ${{ inputs.deploy_dev == 'true' }}
         run: |
-          echo "🔍 Deploying to PREVIEW (dev.mayfairmandi.com)..."
-          PREVIEW_DEPLOY_URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
-          PREVIEW_CUSTOM_URL="https://dev.mayfairmandi.com"
-
-          echo "preview_deploy_url=$PREVIEW_DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "preview_custom_url=$PREVIEW_CUSTOM_URL" >> $GITHUB_OUTPUT
-          echo "✅ Preview Vercel URL: $PREVIEW_DEPLOY_URL"
-          echo "✅ Preview Custom URL: $PREVIEW_CUSTOM_URL"
+          URL=$(vercel deploy --yes --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> $GITHUB_OUTPUT
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: 🌟 Deploy to Production Environment
-        id: deploy_production
-        if: ${{ github.event.inputs.deploy_production == 'true' }}
-        working-directory: ./target-branch
+      - name: Deploy to Prod
+        id: prod
+        if: ${{ inputs.deploy_prod == 'true' }}
         run: |
-          echo "🌟 Deploying to PRODUCTION (prod.mayfairmandi.com)..."
-          PROD_DEPLOY_URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
-          PROD_CUSTOM_URL="https://prod.mayfairmandi.com"
-
-          echo "prod_deploy_url=$PROD_DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "prod_custom_url=$PROD_CUSTOM_URL" >> $GITHUB_OUTPUT
-          echo "✅ Production Vercel URL: $PROD_DEPLOY_URL"
-          echo "✅ Production Custom URL: $PROD_CUSTOM_URL"
+          URL=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> $GITHUB_OUTPUT
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       
-      - name: 📝 Create Deployment Summary
+      - name: Generate Summary
         run: |
-          echo "## 🚀 Dual Environment Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Preview Environment Summary
-          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
-            echo "### 🔍 Preview Environment" >> $GITHUB_STEP_SUMMARY
-            echo "- **Custom Domain:** ${{ steps.deploy_preview.outputs.preview_custom_url }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **Vercel URL:** ${{ steps.deploy_preview.outputs.preview_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.deploy_dev }}" == "true" ]; then
+            echo "<details open>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary><strong>🔍 Dev Deployment</strong></summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Target Branch** | \`${{ env.BRANCH_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **DEV URL** | [View Deployment](https://dev.mayfairmandi.com) |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Vercel URL** | ${{ steps.dev.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployment Details:**" >> $GITHUB_STEP_SUMMARY
+            echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Triggered By:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
-
-          # Production Environment Summary
-          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
-            echo "### � Production Environment" >> $GITHUB_STEP_SUMMARY
-            echo "- **Custom Domain:** ${{ steps.deploy_production.outputs.prod_custom_url }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **Vercel URL:** ${{ steps.deploy_production.outputs.prod_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.deploy_prod }}" == "true" ]; then
+            echo "<details open>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary><strong>🌟 Prod Deployment</strong></summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Target Branch** | \`${{ env.BRANCH_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **PROD URL** | [View Deployment](https://prod.mayfairmandi.com) |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Vercel URL** | ${{ steps.prod.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Deployment Details:**" >> $GITHUB_STEP_SUMMARY
+            echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Triggered By:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
           fi
-
-          echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow:** Self-Sufficient Dual Environment" >> $GITHUB_STEP_SUMMARY
-          echo "- **Files Generated:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
-          echo "- **No Dependencies:** Completely independent of master branch" >> $GITHUB_STEP_SUMMARY
-
-          # Environment Status
-          echo "- **Environments Deployed:**" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
-            echo "  - ✅ Preview (dev.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "  - ⏭️ Preview (skipped)" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
-            echo "  - ✅ Production (prod.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "  - ⏭️ Production (skipped)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
