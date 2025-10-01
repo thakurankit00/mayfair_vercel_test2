@@ -1,7 +1,7 @@
-name: Deploy Any Branch to Vercel
+name: Deploy Any Branch to Vercel (Self-Sufficient)
 
-# This workflow can deploy ANY branch by injecting Vercel support files from master
-# Perfect for feature branches that don't have Vercel files
+# This workflow can deploy ANY branch by generating all Vercel support files automatically
+# No dependency on master branch - completely self-sufficient!
 
 on:
   workflow_dispatch:
@@ -18,10 +18,6 @@ on:
           - production
           - preview
         default: 'preview'
-      source_branch:
-        description: 'Branch to copy Vercel files from'
-        required: true
-        default: 'master'
 
 jobs:
   deploy:
@@ -29,9 +25,9 @@ jobs:
     
     # Prevent concurrent deployments to the same branch
     concurrency:
-      group: vercel-deploy-any-${{ github.event.inputs.branch }}
+      group: vercel-deploy-self-sufficient-${{ github.event.inputs.branch }}
       cancel-in-progress: true
-    
+
     steps:
       - name: 📥 Checkout target branch (to deploy)
         uses: actions/checkout@v4
@@ -40,52 +36,299 @@ jobs:
           fetch-depth: 0
           path: target-branch
 
-      - name: 📥 Checkout source branch (for Vercel files)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.source_branch }}
-          fetch-depth: 0
-          path: source-branch
-
-      - name: 🔧 Inject Vercel support files
+      - name: � Generate Vercel support files
         run: |
-          echo "📦 Injecting Vercel support files from ${{ github.event.inputs.source_branch }} into ${{ github.event.inputs.branch }}..."
-          
+          echo "📦 Generating Vercel support files for ${{ github.event.inputs.branch }}..."
+
           # Create necessary directories
           mkdir -p target-branch/api
           mkdir -p target-branch/frontend/public
           mkdir -p target-branch/frontend/src/contexts
-          
-          # Copy core Vercel files
-          echo "  → Copying vercel.json"
-          cp source-branch/vercel.json target-branch/vercel.json
-          
-          echo "  → Copying api/index.js (fallback entry point)"
-          cp source-branch/api/index.js target-branch/api/index.js
-          
-          echo "  → Copying backend/index.js (Vercel entry point)"
-          cp source-branch/backend/index.js target-branch/backend/index.js
-          
-          # Copy frontend build files
-          echo "  → Copying frontend/build-production.js"
-          cp source-branch/frontend/build-production.js target-branch/frontend/build-production.js
-          
-          echo "  → Copying frontend/.env.production"
-          cp source-branch/frontend/.env.production target-branch/frontend/.env.production
-          
-          echo "  → Copying frontend/public/manifest.json"
-          cp source-branch/frontend/public/manifest.json target-branch/frontend/public/manifest.json
-          
-          # Copy updated SocketContext.jsx (with production URL fix)
-          echo "  → Copying frontend/src/contexts/SocketContext.jsx"
-          cp source-branch/frontend/src/contexts/SocketContext.jsx target-branch/frontend/src/contexts/SocketContext.jsx
-          
-          echo "✅ All Vercel support files injected!"
+
+          # Generate vercel.json
+          echo "  → Creating vercel.json"
+          cat > target-branch/vercel.json << 'EOF'
+          {
+            "version": 2,
+            "builds": [
+              {
+                "src": "backend/index.js",
+                "use": "@vercel/node",
+                "config": { "maxLambdaSize": "50mb" }
+              }
+            ],
+            "routes": [
+              { "src": "/api/(.*)", "dest": "backend/index.js" },
+              { "src": "/(.*)", "dest": "backend/index.js" }
+            ],
+            "env": {
+              "NODE_ENV": "production",
+              "DISABLE_ESLINT_PLUGIN": "true",
+              "CI": "false"
+            }
+          }
+          EOF
+
+          # Generate .vercelignore
+          echo "  → Creating .vercelignore"
+          cat > target-branch/.vercelignore << 'EOF'
+          # Dependencies (will be installed by Vercel)
+          node_modules
+
+          # Testing
+          coverage
+          *.test.js
+          *.spec.js
+          tests/
+          __tests__/
+
+          # Development
+          .env.local
+          .env.development
+          .env.test
+
+          # IDE
+          .vscode
+          .idea
+          *.swp
+          *.swo
+          *~
+
+          # OS
+          .DS_Store
+          Thumbs.db
+
+          # Docker
+          Dockerfile
+          docker-compose.yml
+          .dockerignore
+
+          # Git
+          .git
+          .gitignore
+
+          # Documentation
+          *.md
+          !README.md
+          docs/
+
+          # Database
+          database/
+          *.sql
+
+          # Mobile
+          mobile/
+
+          # Backend development files
+          backend/tests
+          backend/scripts
+
+          # Misc
+          .vercel
+          EOF
+
+          # Generate api/index.js (fallback entry point)
+          echo "  → Creating api/index.js"
+          cat > target-branch/api/index.js << 'EOF'
+          // Generic Vercel entry to make branch deploys work even without vercel.json
+          // Exposes the Express app exported by backend/index.js as a Serverless Function
+
+          const app = require('../backend/index.js');
+
+          module.exports = app;
+          EOF
+
+          # Generate backend/index.js (Vercel entry point)
+          echo "  → Creating backend/index.js"
+          cat > target-branch/backend/index.js << 'EOF'
+          /**
+           * Vercel Entry Point for Mayfair Hotel Management
+           * Serverless-friendly Express app (no app.listen) that mounts API routes and serves frontend
+           */
+
+          const express = require('express');
+          const cors = require('cors');
+          const path = require('path');
+          const fs = require('fs');
+
+          const app = express();
+
+          // Middleware
+          app.use(cors());
+          app.use(express.json({ limit: '50mb' }));
+          app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+          // Health check endpoint
+          app.get('/api/health', (req, res) => {
+            res.json({ status: 'OK', timestamp: new Date().toISOString() });
+          });
+
+          // Auto-mount all route files under /api/v1
+          try {
+            const routesDir = path.join(__dirname, 'src', 'routes');
+            if (fs.existsSync(routesDir)) {
+              const files = fs.readdirSync(routesDir).filter(f => f.endsWith('.js'));
+              files.forEach((file) => {
+                const base = file.replace(/\.js$/i, '');
+                try {
+                  const router = require(path.join(routesDir, file));
+                  if (router && typeof router === 'function') {
+                    app.use(`/api/v1/${base}`, router);
+                    console.log(`Mounted /api/v1/${base}`);
+                  } else {
+                    console.warn(`Skipped ${file}: export is not an Express router`);
+                  }
+                } catch (err) {
+                  console.log(`Route "${file}" not available: ${err.message}`);
+                }
+              });
+            }
+          } catch (err) {
+            console.log('Routes directory not found or error mounting routes:', err.message);
+          }
+
+          // Serve frontend static files
+          const frontendBuildPath = path.join(__dirname, '..', 'frontend', 'build');
+          if (fs.existsSync(frontendBuildPath)) {
+            app.use(express.static(frontendBuildPath));
+
+            // Handle React Router (serve index.html for all non-API routes)
+            app.get('*', (req, res) => {
+              if (!req.path.startsWith('/api')) {
+                res.sendFile(path.join(frontendBuildPath, 'index.html'));
+              } else {
+                res.status(404).json({ error: 'API endpoint not found' });
+              }
+            });
+          } else {
+            app.get('*', (req, res) => {
+              if (!req.path.startsWith('/api')) {
+                res.send('<h1>Frontend not built yet</h1><p>Run npm run build:production in frontend directory</p>');
+              } else {
+                res.status(404).json({ error: 'API endpoint not found' });
+              }
+            });
+          }
+
+          // Export for Vercel
+          module.exports = app;
+          EOF
+
+          echo "✅ Backend files generated!"
+
+      - name: 🔧 Generate frontend files
+        run: |
+          echo "� Generating frontend Vercel files..."
+
+          # Generate frontend/build-production.js
+          echo "  → Creating frontend/build-production.js"
+          cat > target-branch/frontend/build-production.js << 'EOF'
+          #!/usr/bin/env node
+
+          const { spawn } = require('child_process');
+
+          console.log('🔧 Building frontend for production with ESLint disabled...');
+
+          const buildProcess = spawn('npm', ['run', 'build'], {
+            stdio: 'inherit',
+            env: {
+              ...process.env,
+              DISABLE_ESLINT_PLUGIN: 'true',
+              ESLint_NO_DEV_ERRORS: 'true',
+              CI: 'false',
+              GENERATE_SOURCEMAP: 'false'
+            }
+          });
+
+          buildProcess.on('close', (code) => {
+            if (code === 0) {
+              console.log('✅ Frontend build completed successfully!');
+            } else {
+              console.error('❌ Frontend build failed with code:', code);
+              process.exit(code);
+            }
+          });
+
+          buildProcess.on('error', (error) => {
+            console.error('❌ Build process error:', error);
+            process.exit(1);
+          });
+          EOF
+
+          # Generate frontend/.env.production
+          echo "  → Creating frontend/.env.production"
+          cat > target-branch/frontend/.env.production << 'EOF'
+          # Frontend production build vars (Create React App)
+          # These are safe to commit (no secrets); only REACT_APP_* are exposed to the browser
+
+          # Use same-origin API under /api/v1 (routed to backend by vercel.json)
+          REACT_APP_API_URL=/api/v1
+
+          # Socket URL will be dynamically set to window.location.origin in production
+          REACT_APP_SOCKET_URL=
+          REACT_APP_BACKEND_URL=
+
+          # Build optimizations
+          GENERATE_SOURCEMAP=false
+          REACT_APP_VERSION=1.0.0
+          DISABLE_ESLINT_PLUGIN=true
+          ESLint_NO_DEV_ERRORS=true
+          CI=false
+          EOF
+
+          # Generate frontend/public/manifest.json
+          echo "  → Creating frontend/public/manifest.json"
+          cat > target-branch/frontend/public/manifest.json << 'EOF'
+          {
+            "short_name": "Mayfair Hotel",
+            "name": "Mayfair Hotel Management System",
+            "icons": [
+              {
+                "src": "favicon.ico",
+                "sizes": "64x64 32x32 24x24 16x16",
+                "type": "image/x-icon"
+              }
+            ],
+            "start_url": ".",
+            "display": "standalone",
+            "theme_color": "#1976d2",
+            "background_color": "#ffffff",
+            "description": "Hotel Management System for Mayfair Hotel"
+          }
+          EOF
+
+          echo "✅ Frontend files generated!"
+
+      - name: 🔧 Update SocketContext for production
+        run: |
+          echo "�📝 Updating SocketContext.jsx for production deployment..."
+
+          # Check if SocketContext.jsx exists and update it
+          if [ -f "target-branch/frontend/src/contexts/SocketContext.jsx" ]; then
+            echo "  → Updating existing SocketContext.jsx"
+            # Create a backup
+            cp target-branch/frontend/src/contexts/SocketContext.jsx target-branch/frontend/src/contexts/SocketContext.jsx.backup
+
+            # Update the socket URL logic
+            sed -i 's|http://localhost:3000|window.location.origin|g' target-branch/frontend/src/contexts/SocketContext.jsx
+
+            # Add production URL logic if not present
+            if ! grep -q "window.location.origin" target-branch/frontend/src/contexts/SocketContext.jsx; then
+              echo "  → Adding production URL logic to SocketContext.jsx"
+              sed -i 's|const socketUrl = .*|const socketUrl = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_BACKEND_URL || (process.env.NODE_ENV === "production" ? window.location.origin : "http://localhost:3000");|g' target-branch/frontend/src/contexts/SocketContext.jsx
+            fi
+
+            echo "    ✓ SocketContext.jsx updated for production"
+          else
+            echo "  ⚠️ SocketContext.jsx not found - skipping update"
+          fi
+
+          echo "✅ SocketContext update complete!"
 
       - name: 🔧 Update package.json files
         run: |
           echo "📝 Updating package.json files with Vercel scripts..."
-          
+
           # Install jq for JSON manipulation
           sudo apt-get update && sudo apt-get install -y jq
           
@@ -126,12 +369,11 @@ jobs:
           # Check critical files
           files=(
             "vercel.json"
-            "backend/index.js" 
+            "backend/index.js"
             "frontend/public/index.html"
             "frontend/build-production.js"
             "frontend/.env.production"
             "frontend/public/manifest.json"
-            "api/index.js"
           )
           
           for file in "${files[@]}"; do
@@ -200,16 +442,16 @@ jobs:
       
       - name: 📝 Create Deployment Summary
         run: |
-          echo "## 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Self-Sufficient Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Source Branch:** \`${{ github.event.inputs.source_branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** \`${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Deployment URL:** ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow:** Any Branch (File injection)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Files Injected:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** Self-Sufficient (Auto-generated files)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Generated:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
+          echo "- **No Dependencies:** Completely independent of master branch" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
