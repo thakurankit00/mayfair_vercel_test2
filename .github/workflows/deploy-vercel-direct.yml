@@ -1,4 +1,6 @@
 name: Deploy to Vercel (Direct)
+run-name: "Vercel Deploy • ${{ github.event.inputs.environment || 'preview' }} • ${{ github.event.inputs.branch || github.ref_name }}"
+
 
 # This workflow deploys the branch AS-IS to Vercel
 # All required files must be committed to the repository
