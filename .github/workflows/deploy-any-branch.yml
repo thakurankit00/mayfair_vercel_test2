@@ -21,8 +21,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
-    # Prevent concurrent deployments
     concurrency:
       group: vercel-deploy-dual-master
       cancel-in-progress: true
