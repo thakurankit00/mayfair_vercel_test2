@@ -145,6 +145,14 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+      - name: Ensure frontend build:production script
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            node -e 'const fs=require("fs"); const p="frontend/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.scripts=pkg.scripts||{}; if(!pkg.scripts["build:production"]){ pkg.scripts["build:production"]="node build-production.js"; fs.writeFileSync(p, JSON.stringify(pkg,null,2)); console.log("Added build:production to frontend/package.json"); } else { console.log("build:production already present"); }'
+          else
+            echo "ℹ️ frontend/package.json not found; skipping build:production injection"
+          fi
+
       - name: 🚀 Deploy to Vercel
         id: deploy
         run: |
