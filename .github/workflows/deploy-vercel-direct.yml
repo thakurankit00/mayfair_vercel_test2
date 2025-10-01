@@ -34,64 +34,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-
-      - name: 🔧 Setup Node.js (early)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: 📂 Checkout support files (main)
-        uses: actions/checkout@v4
-        continue-on-error: true
-        with:
-          ref: main
-          path: __support_main
-          fetch-depth: 1
-
-      - name: 📂 Checkout support files (master)
-        uses: actions/checkout@v4
-        continue-on-error: true
-        with:
-          ref: master
-          path: __support_master
-          fetch-depth: 1
-
-      - name: ♻️ Inject support files if missing
-        shell: bash
-        run: |
-          set -e
-          echo "🔎 Determining support source..."
-          if [ -d "__support_main" ]; then SUPPORT_ROOT="__support_main"; elif [ -d "__support_master" ]; then SUPPORT_ROOT="__support_master"; else echo "❌ No support branch (main/master) available"; exit 1; fi
-          echo "Using $SUPPORT_ROOT for support files"
-          PROJECT_DIR="mayfair-masterv2"
-
-          inject_file() {
-            local src="$1"; local dest="$2";
-            if [ ! -f "$dest" ]; then
-              mkdir -p "$(dirname "$dest")"
-              cp -f "$SUPPORT_ROOT/$PROJECT_DIR/$src" "$dest"
-              echo "  ➕ Injected $dest"
-            else
-              echo "  ✓ $dest already present"
-            fi
-          }
-
-          inject_file "vercel.json" "vercel.json"
-          inject_file "backend/index.js" "backend/index.js"
-          inject_file "api/index.js" "api/index.js"
-          inject_file "frontend/build-production.js" "frontend/build-production.js"
-          inject_file "frontend/.env.production" "frontend/.env.production"
-          inject_file "frontend/public/manifest.json" "frontend/public/manifest.json"
-
-      - name: 🧪 Patch backend/package.json scripts
-        run: |
-          node -e "const fs=require('fs');const p='backend/package.json';if(!fs.existsSync(p)){process.exit(0)}const j=JSON.parse(fs.readFileSync(p));j.scripts=j.scripts||{};if(!j.scripts.postinstall){j.scripts.postinstall='cd ../frontend && npm install && npm run build:production'}fs.writeFileSync(p,JSON.stringify(j,null,2));console.log('Patched backend/package.json ✅')"
-
-      - name: 🧪 Patch frontend/package.json scripts and ESLint rules
-        run: |
-          node -e "const fs=require('fs');const p='frontend/package.json';if(!fs.existsSync(p)){process.exit(0)}const j=JSON.parse(fs.readFileSync(p));j.scripts=j.scripts||{};if(!j.scripts['build:production']){j.scripts['build:production']='node build-production.js'}j.eslintConfig=j.eslintConfig||{extends:['react-app','react-app/jest']};j.eslintConfig.rules=j.eslintConfig.rules||{};j.eslintConfig.rules['no-console']='off';j.eslintConfig.rules['no-unused-vars']=['warn',{argsIgnorePattern:'^_',varsIgnorePattern:'^_'}];j.eslintConfig.rules['react-hooks/exhaustive-deps']='off';fs.writeFileSync(p,JSON.stringify(j,null,2));console.log('Patched frontend/package.json ✅')"
-
-      - name: � Verify required files
+      - name: 🔍 Verify required files
         run: |
           echo "📦 Verifying required Vercel files..."
           # Check critical files
@@ -175,7 +118,7 @@ jobs:
           echo "**Deployment URL:** ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow:** Direct with support-file injection (from main/master)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** Direct (No file injection)" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
