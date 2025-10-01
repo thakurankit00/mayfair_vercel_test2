@@ -120,6 +120,22 @@ if (fs.existsSync(frontendBuild)) {
       res.status(500).json({ success: false, error: { code: 'STATIC_FILE_ERROR', message: 'Unable to serve frontend files' } });
     }
   });
+} else {
+  // Fallback when no frontend build is present
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      success: true,
+      message: 'Mayfair API is running (no frontend build found)',
+      endpoints: {
+        health: '/api/health',
+        dbHealth: '/api/db-health',
+        apiBase: '/api/v1'
+      }
+    });
+  });
+  app.get('*', (req, res) => {
+    res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Route not found. See /api/health' } });
+  });
 }
 
 // Global error handler
