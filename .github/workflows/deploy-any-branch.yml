@@ -1,12 +1,16 @@
-name: Deploy Master - Dual Environment
+name: Deploy Any Branch - Dual Environment (Self-Sufficient)
 
-# This workflow deploys MASTER branch to both environments!
+# This workflow can deploy ANY branch to BOTH environments simultaneously!
 # ✅ Preview: dev.mayfairmandi.com | ✅ Production: prod.mayfairmandi.com
-# Always uses master branch - no branch selection needed!
+# No dependency on master branch - completely self-sufficient!
 
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'master'
       deploy_preview:
         description: 'deploy dev'
         required: false
@@ -21,8 +25,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
+    # Prevent concurrent deployments to the same branch
     concurrency:
-      group: vercel-deploy-dual-master
+      group: vercel-deploy-dual-${{ github.event.inputs.branch }}
       cancel-in-progress: true
 
     steps:
@@ -42,14 +48,14 @@ jobs:
             echo "  → Production deployment: ENABLED (prod.mayfairmandi.com)"
           fi
 
-      - name: 📥 Checkout master branch (to deploy)
+      - name: 📥 Checkout target branch (to deploy)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           path: target-branch
 
-      - name: 🛠 Generate Vercel support files
+      - name: � Generate Vercel support files
         run: |
           echo "📦 Generating Vercel support files for ${{ github.event.inputs.branch }}..."
 
@@ -227,10 +233,11 @@ jobs:
           module.exports = app;
           EOF
 
-          echo "✅ Backend files generated!" 
-     - name: 🔧 Generate frontend files
+          echo "✅ Backend files generated!"
+
+      - name: 🔧 Generate frontend files
         run: |
-          echo "🔧 Generating frontend Vercel files..."
+          echo "� Generating frontend Vercel files..."
 
           # Generate frontend/build-production.js
           echo "  → Creating frontend/build-production.js"
@@ -313,7 +320,7 @@ jobs:
 
       - name: 🔧 Update SocketContext for production
         run: |
-          echo "📝 Updating SocketContext.jsx for production deployment..."
+          echo "�📝 Updating SocketContext.jsx for production deployment..."
 
           # Check if SocketContext.jsx exists and update it
           if [ -f "target-branch/frontend/src/contexts/SocketContext.jsx" ]; then
@@ -469,39 +476,47 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       
-      - name: 📝 Create Dev Deploy Summary
-        if: ${{ github.event.inputs.deploy_preview == 'true' }}
+      - name: 📝 Create Deployment Summary
         run: |
-          echo "## dev-deploy/summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Dual Environment Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Deploy Summary (dev) 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "• **Target Branch:** \`master\` 🌿" >> $GITHUB_STEP_SUMMARY
-          echo "• **DEV URL:** ${{ steps.deploy_preview.outputs.preview_custom_url }} 🔗" >> $GITHUB_STEP_SUMMARY
-          echo "• **VERCEL URL:** ${{ steps.deploy_preview.outputs.preview_deploy_url }} ⚡" >> $GITHUB_STEP_SUMMARY
-          echo "• **Environment:** dev 🌍" >> $GITHUB_STEP_SUMMARY
-          echo "• **Commit:** \`${{ github.sha }}\` 📝" >> $GITHUB_STEP_SUMMARY
-          echo "• **Triggered By:** @${{ github.actor }} 👤" >> $GITHUB_STEP_SUMMARY
-          echo "• **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC') ⏰" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Job summary generated at run-time_" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Branch:** \`${{ github.event.inputs.branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: 📝 Create Prod Deploy Summary
-        if: ${{ github.event.inputs.deploy_production == 'true' }}
-        run: |
-          echo "## prod-deploy/summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Deploy Summary (prod) 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "• **Target Branch:** \`master\` 🌿" >> $GITHUB_STEP_SUMMARY
-          echo "• **PROD URL:** ${{ steps.deploy_production.outputs.prod_custom_url }} 🔗" >> $GITHUB_STEP_SUMMARY
-          echo "• **VERCEL URL:** ${{ steps.deploy_production.outputs.prod_deploy_url }} ⚡" >> $GITHUB_STEP_SUMMARY
-          echo "• **Environment:** prod 🌍" >> $GITHUB_STEP_SUMMARY
-          echo "• **Commit:** \`${{ github.sha }}\` 📝" >> $GITHUB_STEP_SUMMARY
-          echo "• **Triggered By:** @${{ github.actor }} 👤" >> $GITHUB_STEP_SUMMARY
-          echo "• **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC') ⏰" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Job summary generated at run-time_" >> $GITHUB_STEP_SUMMARY
+          # Preview Environment Summary
+          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
+            echo "### 🔍 Preview Environment" >> $GITHUB_STEP_SUMMARY
+            echo "- **Custom Domain:** ${{ steps.deploy_preview.outputs.preview_custom_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Vercel URL:** ${{ steps.deploy_preview.outputs.preview_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Production Environment Summary
+          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
+            echo "### � Production Environment" >> $GITHUB_STEP_SUMMARY
+            echo "- **Custom Domain:** ${{ steps.deploy_production.outputs.prod_custom_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Vercel URL:** ${{ steps.deploy_production.outputs.prod_deploy_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### 📊 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow:** Self-Sufficient Dual Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Generated:** vercel.json, backend/index.js, build scripts, manifest.json, etc." >> $GITHUB_STEP_SUMMARY
+          echo "- **No Dependencies:** Completely independent of master branch" >> $GITHUB_STEP_SUMMARY
+
+          # Environment Status
+          echo "- **Environments Deployed:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.deploy_preview }}" == "true" ]; then
+            echo "  - ✅ Preview (dev.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "  - ⏭️ Preview (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ github.event.inputs.deploy_production }}" == "true" ]; then
+            echo "  - ✅ Production (prod.mayfairmandi.com)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "  - ⏭️ Production (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
