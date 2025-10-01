@@ -8,16 +8,16 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to deploy (can be any branch)'
+        description: 'Branch to deploy'
         required: true
         default: 'master'
       deploy_preview:
-        description: 'Deploy to Preview (dev.mayfairmandi.com)'
+        description: 'deploy dev'
         required: false
         type: boolean
         default: true
       deploy_production:
-        description: 'Deploy to Production (prod.mayfairmandi.com)'
+        description: 'deploy prod'
         required: false
         type: boolean
         default: false
