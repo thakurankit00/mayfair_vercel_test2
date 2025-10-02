@@ -2,34 +2,6 @@ name: Database Sync - Pooler to Direct
 
 on:
   workflow_dispatch:
-    inputs:
-      sync_type:
-        description: 'Type of sync to perform'
-        required: true
-        default: 'schema_and_data'
-        type: choice
-        options:
-          - schema_and_data
-          - schema_only
-          - data_only
-      source_db_user:
-        description: 'Source database username'
-        required: false
-        default: 'postgres.aglpkgpajcgjdlfunwyr'
-      source_db_password:
-        description: 'Source database password'
-        required: false
-      target_db_user:
-        description: 'Target database username'
-        required: false
-        default: 'postgres'
-      target_db_password:
-        description: 'Target database password'
-        required: false
-      tables_to_sync:
-        description: 'Comma-separated list of tables to sync (leave empty for all)'
-        required: false
-        default: ''
 
 jobs:
   sync-databases:
@@ -287,11 +259,11 @@ jobs:
       - name: Construct database URLs
         id: db-urls
         run: |
-          # Construct source database URL
-          SOURCE_DB_URL="postgresql://${{ github.event.inputs.source_db_user }}:${{ secrets.SOURCE_DB_PASSWORD }}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+          # Construct source database URL (Pooler)
+          SOURCE_DB_URL="postgresql://postgres.aglpkgpajcgjdlfunwyr:${{ secrets.SOURCE_DB_PASSWORD }}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
 
-          # Construct target database URL
-          TARGET_DB_URL="postgresql://${{ github.event.inputs.target_db_user }}:${{ secrets.TARGET_DB_PASSWORD }}@db.ritrltdfyhulykpxbefe.supabase.co:5432/postgres"
+          # Construct target database URL (Direct)
+          TARGET_DB_URL="postgresql://postgres:${{ secrets.TARGET_DB_PASSWORD }}@db.ritrltdfyhulykpxbefe.supabase.co:5432/postgres"
 
           # Output for use in next steps
           echo "source_db_url=$SOURCE_DB_URL" >> $GITHUB_OUTPUT
@@ -301,14 +273,13 @@ jobs:
         env:
           SOURCE_DB_URL: ${{ steps.db-urls.outputs.source_db_url }}
           TARGET_DB_URL: ${{ steps.db-urls.outputs.target_db_url }}
-          SYNC_TYPE: ${{ github.event.inputs.sync_type }}
-          TABLES_TO_SYNC: ${{ github.event.inputs.tables_to_sync }}
+          SYNC_TYPE: schema_and_data
         run: |
           echo "🔄 Starting database sync..."
-          echo "Source: ${{ steps.db-urls.outputs.source_db_url }}"
-          echo "Target: ${{ steps.db-urls.outputs.target_db_url }}"
-          echo "Sync Type: ${{ github.event.inputs.sync_type }}"
-          echo "Tables: ${{ github.event.inputs.tables_to_sync || 'all' }}"
+          echo "Source: Pooler Connection (aws-1-ap-southeast-1.pooler.supabase.com)"
+          echo "Target: Direct Connection (db.ritrltdfyhulykpxbefe.supabase.co)"
+          echo "Sync Type: schema_and_data (full sync)"
+          echo "Tables: All tables"
 
           node sync_databases.js
 
@@ -318,8 +289,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Source Database:** Pooler Connection (aws-1-ap-southeast-1.pooler.supabase.com)" >> $GITHUB_STEP_SUMMARY
           echo "**Target Database:** Direct Connection (db.ritrltdfyhulykpxbefe.supabase.co)" >> $GITHUB_STEP_SUMMARY
-          echo "**Sync Type:** ${{ github.event.inputs.sync_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Tables:** ${{ github.event.inputs.tables_to_sync || 'All tables' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Sync Type:** Full sync (schema + data)" >> $GITHUB_STEP_SUMMARY
+          echo "**Tables:** All tables" >> $GITHUB_STEP_SUMMARY
           echo "**Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
