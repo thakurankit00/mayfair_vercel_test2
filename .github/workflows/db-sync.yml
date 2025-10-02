@@ -1,84 +1,27 @@
-name: Database Sync - Pooler to Direct
+name: Sync Supabase DBs
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # run manually from GitHub Actions UI
+  schedule:
+    - cron: "0 * * * *" # every hour (adjust as needed)
 
 jobs:
   sync-databases:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install PostgreSQL client and backend dependencies
+      - name: Install Ruby & pgsync
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
-          cd backend
-          npm install
+          sudo apt-get install -y ruby-full build-essential
+          gem install pgsync
 
-      - name: Construct database URLs
-        id: db-urls
-        run: |
-          # Construct source database URL (Pooler)
-          SOURCE_DB_URL="postgresql://postgres.aglpkgpajcgjdlfunwyr:${{ secrets.SOURCE_DB_PASSWORD }}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
-
-          # Construct target database URL (Direct)
-          TARGET_DB_URL="postgresql://postgres:${{ secrets.TARGET_DB_PASSWORD }}@db.ritrltdfyhulykpxbefe.supabase.co:5432/postgres"
-
-          # Output for use in next steps
-          echo "source_db_url=$SOURCE_DB_URL" >> $GITHUB_OUTPUT
-          echo "target_db_url=$TARGET_DB_URL" >> $GITHUB_OUTPUT
-
-      - name: Run database synchronization
-        working-directory: backend
+      - name: Run DB Sync
         env:
-          SOURCE_DB_URL: ${{ steps.db-urls.outputs.source_db_url }}
-          TARGET_DB_URL: ${{ steps.db-urls.outputs.target_db_url }}
-          SYNC_TYPE: schema_and_data
+          DATABASE_URL_FROM: postgresql://postgres.aglpkgpajcgjdlfunwyr:${{ secrets.SOURCE_DB_PASSWORD }}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres
+          DATABASE_URL_TO: postgresql://postgres.ritrltdfyhulykpxbefe:${{ secrets.TARGET_DB_PASSWORD }}@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
         run: |
-          echo "🔄 Starting database sync..."
-          echo "Source: Pooler Connection (aws-1-ap-southeast-1.pooler.supabase.com)"
-          echo "Target: Direct Connection (db.ritrltdfyhulykpxbefe.supabase.co)"
-          echo "Sync Type: schema_and_data (full sync)"
-          echo "Tables: All tables"
-
-          node sync_db.js
-
-      - name: Generate sync summary
-        run: |
-          echo "## 🗄️ Database Sync Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Source Database:** Pooler Connection (aws-1-ap-southeast-1.pooler.supabase.com)" >> $GITHUB_STEP_SUMMARY
-          echo "**Target Database:** Direct Connection (db.ritrltdfyhulykpxbefe.supabase.co)" >> $GITHUB_STEP_SUMMARY
-          echo "**Sync Type:** Full sync (schema + data)" >> $GITHUB_STEP_SUMMARY
-          echo "**Tables:** All tables" >> $GITHUB_STEP_SUMMARY
-          echo "**Timestamp:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔐 Security" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Database credentials loaded from GitHub secrets" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ No sensitive data in workflow logs" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Sync Details" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Schema synchronization completed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Data synchronization completed" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔍 Check workflow logs for detailed table-by-table progress" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create sync notification
-        if: success()
-        run: |
-          echo "🎉 Database sync completed successfully!"
-          echo "Check the workflow summary for details."
-
-      - name: Create failure notification
-        if: failure()
-        run: |
-          echo "❌ Database sync failed!"
-          echo "Check the workflow logs for error details."
+          pgsync --in-batches --overwrite --from "$DATABASE_URL_FROM" --to "$DATABASE_URL_TO"
